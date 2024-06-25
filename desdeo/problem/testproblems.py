@@ -1467,6 +1467,15 @@ def re25() -> Problem:
         lowerbound=1,
         upperbound=70
     )
+
+    c_f = "((4 * (x_2 / x_3) - 1) / (4 * (x_2 / x_3) - 4) + ((0.615 * x_3) / x_2))"
+
+    g_1 = Constraint(
+        name="g_1",
+        symbol="g_1",
+        cons_type=ConstraintTypeEnum.LTE,
+        func="(8 * )"
+    )
     return
 
 if __name__ == "__main__":

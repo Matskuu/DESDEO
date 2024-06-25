@@ -46,7 +46,7 @@ Here is an approximation of the reinforced concrete beam design problem's Pareto
 
 ## The pressure vessel design problem (RE23)
 
-The pressure vessel design problem [4] involves a cylindrical pressure vessel that is capped at both ends by hemispherical heads. The first objective is to minimize the total cost, including the cost of material, forming and welding. The second objective is to minimize the sum of the two constraint violations. The decision variables $x_1$ and $x_2$ represent the thickness of the shell and the head, and the decision variables $x_3$ and $x_4$ represent the inner radius and length of the cylindrical section. The units for each decision variable are inches. The decision variables $x_1$ and $x_2$ are integer multiples of 0.0625 inches, which is the available thickness of rolled steel plates. That makes the decision variables a mix of continuous and discrete variables. The Pareto front for the problem is disconnected.
+The pressure vessel design problem [4] involves a cylindrical pressure vessel that is capped at both ends by hemispherical heads. The first objective is to minimize the total cost, including the cost of material, forming and welding. The second objective is to minimize the sum of the three constraint violations. The decision variables $x_1$ and $x_2$ represent the thickness of the shell and the head, and the decision variables $x_3$ and $x_4$ represent the inner radius and length of the cylindrical section. The units for each decision variable are inches. The decision variables $x_1$ and $x_2$ are integer multiples of 0.0625 inches, which is the available thickness of rolled steel plates. That makes the decision variables a mix of continuous and discrete variables. The Pareto front for the problem is disconnected.
 
 The objective functions and constraints for the reinforced concrete beam design problem are defined as follows:
 
@@ -55,7 +55,7 @@ $$\begin{align}
     & & f_2(\mathbf{x}) & = \sum_{i=1}^3 \max\{g_i(\mathbf{x}), 0\} \\
     &\text{s.t.,}   & g_1(\mathbf{x}) & = -x_1 + 0.0193x_3 \leq 0,\\
     & & g_2(\mathbf{x}) & = -x_2 + 0.00954x_3 \leq 0, \\
-    & & g_3(\mathbf{x}) & = -\pi x_3^2x_4 - \frac{4}{3}\pi x_3^3 + 1\,296\,000 \leq 0.
+    & & g_3(\mathbf{x}) & = -\pi x_3^2x_4 - \frac{4}{3}\pi x_3^3 + 1 296 000 \leq 0.
 \end{align}$$
 
 Here is an approximation of the pressure vessel design problem's Pareto front (taken from [2]), where the $x$ and $y$ axes represent the values of the objective functions $f_1$ and $f_2$ respectively:
@@ -77,7 +77,7 @@ $$\begin{align}
     & & g_4(\mathbf{x}) & = 1.0 - \frac{\sigma_b}{\sigma_{k}} \geq 0,
 \end{align}$$
 
-where $x_1 \in [0.5, 4]$ and $x_2 \in [4, 50]$. The parameters are defined as $\sigma_{b,max} = 700 kg/cm^2$, $\tau_{max} = 450 kg/cm$, $\delta_{max} = 1.5 cm$, $\sigma_k = Ex_1^2/100 kg/cm^2$, $\sigma_b = 4500/(x_1x_2) kg/cm^2$, $\tau = 1800/x_2 kg/cm^2$, $\delta = 56.2 \times 10^4/(Ex_1x_2^2)$, and $E = 700\,000 kg/cm^2$.
+where $x_1 \in [0.5, 4]$ and $x_2 \in [4, 50]$. The parameters are defined as $\sigma_{b,max} = 700 kg/cm^2$, $\tau_{max} = 450 kg/cm$, $\delta_{max} = 1.5 cm$, $\sigma_k = Ex_1^2/100 kg/cm^2$, $\sigma_b = 4500/(x_1x_2) kg/cm^2$, $\tau = 1800/x_2 kg/cm^2$, $\delta = 56.2 \times 10^4/(Ex_1x_2^2)$, and $E = 700\ 000 kg/cm^2$.
 
 Here is an approximation of the hatch cover design problem's Pareto front (taken from [2]), where the $x$ and $y$ axes represent the values of the objective functions $f_1$ and $f_2$ respectively:
 
