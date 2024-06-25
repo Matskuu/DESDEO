@@ -1359,7 +1359,7 @@ def re24() -> Problem:
         &\text{s.t.,}   & g_1(\mathbf{x}) & = 1.0 - \frac{\sigma_b}{\sigma_{b,max}} \geq 0,\\
         & & g_2(\mathbf{x}) & = 1.0 - \frac{\tau}{\tau_{max}} \geq 0, \\
         & & g_3(\mathbf{x}) & = 1.0 - \frac{\delta}{\delta_{max}} \geq 0, \\
-        & & g_3(\mathbf{x}) & = 1.0 - \frac{\sigma_b}{\sigma_{k}} \geq 0,
+        & & g_4(\mathbf{x}) & = 1.0 - \frac{\sigma_b}{\sigma_{k}} \geq 0,
     \end{align}
 
     where $x_1 \in [0.5, 4]$ and $x_2 \in [4, 50]$. The parameters are defined as $\sigma_{b,max} = 700 kg/cm^2$,
@@ -1444,6 +1444,30 @@ def re24() -> Problem:
         objectives=[f_1, f_2],
         constraints=[g_1, g_2, g_3, g_4]
     )
+
+def re25() -> Problem:
+    x_1 = Variable(
+        name="x_1",
+        symbol="x_1",
+        variable_type=VariableTypeEnum.integer,
+        lowerbound=1,
+        upperbound=70
+    )
+    x_2 = Variable(
+        name="x_2",
+        symbol="x_2",
+        variable_type=VariableTypeEnum.real,
+        lowerbound=0.6,
+        upperbound=30
+    )
+    x_3 = Variable(
+        name="x_3",
+        symbol="x_3",
+        variable_type=VariableTypeEnum.integer,
+        lowerbound=1,
+        upperbound=70
+    )
+    return
 
 if __name__ == "__main__":
     problem = simple_scenario_test_problem()
