@@ -1460,24 +1460,128 @@ def re25() -> Problem:
         lowerbound=0.6,
         upperbound=30
     )
-    x_3 = Variable(
-        name="x_3",
-        symbol="x_3",
-        variable_type=VariableTypeEnum.integer,
-        lowerbound=1,
-        upperbound=70
+
+    feasible_values = np.array([0.009, 0.0095, 0.0104, 0.0118, 0.0128, 0.0132, 0.014, 0.015, 0.0162, 0.0173,
+                                0.018, 0.02, 0.023, 0.025, 0.028, 0.032, 0.035, 0.041, 0.047, 0.054, 0.063,
+                                0.072, 0.08, 0.092, 0.105, 0.12, 0.135, 0.148, 0.162, 0.177, 0.192, 0.207,
+                                0.225, 0.244, 0.263, 0.283, 0.307, 0.331, 0.362, 0.394, 0.4375, 0.5])
+
+    variables = [x_1, x_2]
+
+    # forming a set of variables and a constraint to make sure x_1 is from the set of feasible values
+    x_3_eprs = []
+    for i in range(len(feasible_values)):
+        x = Variable(
+            name=f"x_3_{i}",
+            symbol=f"x_3_{i}",
+            variable_type=VariableTypeEnum.binary,
+            lowerbound=0,
+            upperbound=1
+        )
+        variables.append(x)
+        expr = f"x_3_{i} * {feasible_values[i]}"
+        x_3_eprs.append(expr)
+    x_3_eprs = " + ".join(x_3_eprs)
+
+    sum_expr = [f"x_3_{i}" for i in range(len(feasible_values))]
+    sum_expr = " + ".join(sum_expr) + " - 1"
+
+    x_3_con = Constraint(
+        name="x_3_con",
+        symbol="x_3_con",
+        cons_type=ConstraintTypeEnum.EQ,
+        func=sum_expr
     )
 
-    c_f = "((4 * (x_2 / x_3) - 1) / (4 * (x_2 / x_3) - 4) + ((0.615 * x_3) / x_2))"
+    c_f = f"((4 * (x_2 / {x_3_eprs}) - 1) / (4 * (x_2 / {x_3_eprs}) - 4) + ((0.615 * {x_3_eprs}) / x_2))"
+    k = f"((11.5 * 10**6 * {x_3_eprs}**4) / (8 * x_1 * x_2**3))"
+    sigma_p = f"(300 / {k})"
+    l_f = f"((1000 / {k}) + (1.05 * (x_1 + 2) * {x_3_eprs}))"
+
+    g_1_exprs = f"(8 * {c_f} * 1000 * x_2) / ({np.pi} * {x_3_eprs}**3) - 189000"
+    g_2_exprs = f"{l_f} - 14"
+    g_3_exprs = f"3 - (x_2 / {x_3_eprs})"
+    g_4_exprs = f"{sigma_p} - 6"
+    g_5_exprs = f"{sigma_p} + ((1000 - 300) / {k}) + 1.05 * (x_1 + 2) * {x_3_eprs} - {l_f}"
+    g_6_exprs = f"1.25 - ((1000 - 300) / {k})"
 
     g_1 = Constraint(
         name="g_1",
         symbol="g_1",
         cons_type=ConstraintTypeEnum.LTE,
-        func="(8 * )"
+        func=g_1_exprs
     )
-    return
+    g_2 = Constraint(
+        name="g_2",
+        symbol="g_2",
+        cons_type=ConstraintTypeEnum.LTE,
+        func=g_2_exprs
+    )
+    g_3 = Constraint(
+        name="g_3",
+        symbol="g_3",
+        cons_type=ConstraintTypeEnum.LTE,
+        func=g_3_exprs
+    )
+    g_4 = Constraint(
+        name="g_4",
+        symbol="g_4",
+        cons_type=ConstraintTypeEnum.LTE,
+        func=g_4_exprs
+    )
+    g_5 = Constraint(
+        name="g_5",
+        symbol="g_5",
+        cons_type=ConstraintTypeEnum.LTE,
+        func=g_5_exprs
+    )
+    g_6 = Constraint(
+        name="g_6",
+        symbol="g_6",
+        cons_type=ConstraintTypeEnum.LTE,
+        func=g_6_exprs
+    )
+
+    f_1 = Objective(
+        name="f_1",
+        symbol="f_1",
+        func=f"({np.pi}**2 * x_2 * {x_3_eprs}**2 * (x_1 + 2)) / 4",
+        objective_type=ObjectiveTypeEnum.analytical
+    )
+    f_2 = Objective(
+        name="f_2",
+        symbol="f_2",
+        func=f"Max({g_1_exprs}, 0) + Max({g_2_exprs}, 0) + Max({g_3_exprs}, 0) + Max({g_4_exprs}, 0) + Max({g_5_exprs}, 0) + Max({g_6_exprs}, 0)",
+        objective_type=ObjectiveTypeEnum.analytical
+    )
+    return Problem(
+        name="re25",
+        description="",
+        variables=variables,
+        objectives=[f_1, f_2],
+        constraints=[g_1, g_2, g_3, g_4, g_5, g_6, x_3_con]
+    )
 
 if __name__ == "__main__":
-    problem = simple_scenario_test_problem()
-    print(problem.model_dump_json(indent=2))
+    #problem = simple_scenario_test_problem()
+    #print(problem.model_dump_json(indent=2))
+    problem = re25()
+
+    from desdeo.problem import GenericEvaluator
+    evaluator = GenericEvaluator(problem)
+
+    xs = {"x_1": 35, "x_2": 15.5}
+    for i in range(len(problem.variables) - 2):
+        if i == 32:
+            xs[f"x_3_{i}"] = 1
+        else:
+            xs[f"x_3_{i}"] = 0
+
+    print(problem.variables, xs)
+
+    res = evaluator.evaluate(xs)
+
+    obj_values = [res[obj.symbol][0] for obj in problem.objectives]
+    print(obj_values)
+
+

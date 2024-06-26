@@ -55,7 +55,7 @@ $$\begin{align}
     & & f_2(\mathbf{x}) & = \sum_{i=1}^3 \max\{g_i(\mathbf{x}), 0\} \\
     &\text{s.t.,}   & g_1(\mathbf{x}) & = -x_1 + 0.0193x_3 \leq 0,\\
     & & g_2(\mathbf{x}) & = -x_2 + 0.00954x_3 \leq 0, \\
-    & & g_3(\mathbf{x}) & = -\pi x_3^2x_4 - \frac{4}{3}\pi x_3^3 + 1 296 000 \leq 0.
+    & & g_3(\mathbf{x}) & = -\pi x_3^2x_4 - \frac{4}{3}\pi x_3^3 + 1\ 296\ 000 \leq 0.
 \end{align}$$
 
 Here is an approximation of the pressure vessel design problem's Pareto front (taken from [2]), where the $x$ and $y$ axes represent the values of the objective functions $f_1$ and $f_2$ respectively:
