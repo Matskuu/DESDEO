@@ -53,8 +53,8 @@ def get_all_problems(
             ProblemFormat(
                 objective_names=[objective.name for objective in temp_problem.objectives],
                 variable_names=[variable.name for variable in temp_problem.variables],
-                ideal=[value for _, value in get_ideal_dict(temp_problem).items()],
-                nadir=[value for _, value in get_nadir_dict(temp_problem).items()],
+                ideal=[value if value is not None else 0 for _, value in get_ideal_dict(temp_problem).items()],
+                nadir=[value if value is not None else 1 for _, value in get_nadir_dict(temp_problem).items()],
                 n_objectives=len(temp_problem.objectives),
                 n_variables=len(temp_problem.variables),
                 n_constraints=len(temp_problem.constraints) if temp_problem.constraints else 0,

@@ -11,7 +11,7 @@ from desdeo.api.db import SessionLocal, engine
 from desdeo.api.routers.UserAuth import get_password_hash
 from desdeo.api.schema import ObjectiveKind, ProblemKind, UserPrivileges, UserRole
 from desdeo.problem.schema import DiscreteRepresentation, Objective, Problem, Variable
-from desdeo.problem.testproblems import binh_and_korn, nimbus_test_problem
+from desdeo.problem.testproblems import binh_and_korn, nimbus_test_problem, forest_problem
 
 TEST_USER = "test"
 TEST_PASSWORD = "test"  # NOQA: S105 # TODO: Remove this line and create a proper user creation system.
@@ -21,11 +21,11 @@ TEST_PASSWORD = "test"  # NOQA: S105 # TODO: Remove this line and create a prope
 # TODO: Remove this line and create a proper database migration system.
 print("Creating database tables.")
 if not database_exists(engine.url):
-    create_database(engine.url)
+    create_database(engine.url, template="template0")
 else:
     warnings.warn("Database already exists. Dropping and recreating it.", stacklevel=1)
     drop_database(engine.url)
-    create_database(engine.url)
+    create_database(engine.url, template="template0")
 print("Database tables created.")
 
 # Create the tables in the database.
@@ -60,11 +60,22 @@ problem_in_db = db_models.Problem(
     name="Test 4",
     kind=ProblemKind.CONTINUOUS,
     obj_kind=ObjectiveKind.ANALYTICAL,
-    value=problem.model_dump(mode="json"),
-    role_permission=[],
+    value=problem.model_dump(mode="json")
 )
 
 db.add(problem_in_db)
+
+problem = forest_problem()
+problem_in_db = db_models.Problem(
+    owner=user.id,
+    name="Forest problem",
+    kind=ProblemKind.CONTINUOUS,
+    obj_kind=ObjectiveKind.ANALYTICAL,
+    value=problem.model_dump(mode="json")
+)
+
+db.add(problem_in_db)
+
 
 db.commit()
 

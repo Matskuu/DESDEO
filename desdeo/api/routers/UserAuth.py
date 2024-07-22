@@ -16,12 +16,13 @@ from desdeo.api.schema import User
 
 router = APIRouter()
 
-SECRET_KEY = AuthConfig.authjwt_secret_key
-ALGORITHM = AuthConfig.authjwt_algorithm
-ACCESS_TOKEN_EXPIRE_MINUTES = AuthConfig.authjwt_access_token_expires
+authconfig = AuthConfig()
+SECRET_KEY = authconfig.authjwt_secret_key
+ALGORITHM = authconfig.authjwt_algorithm
+ACCESS_TOKEN_EXPIRE_MINUTES = authconfig.authjwt_access_token_expires
 SALT = bcrypt.gensalt()
 
-REFRESH_TOKEN_EXPIRE_MINUTES = AuthConfig.authjwt_refresh_token_expires
+REFRESH_TOKEN_EXPIRE_MINUTES = authconfig.authjwt_refresh_token_expires
 
 class Token(BaseModel):
     """A model for the authentication token."""
