@@ -2,10 +2,11 @@
 
 from copy import deepcopy
 
+import numpy as np
 import sympy as sp
 
 from desdeo.problem.json_parser import FormatEnum, MathParser
-from desdeo.problem.schema import Problem
+from desdeo.problem.schema import Constant, Problem, TensorVariable
 
 
 class SympyEvaluator:
@@ -22,7 +23,8 @@ class SympyEvaluator:
 
         self.variable_symbols = [var.symbol for var in problem.variables]
         self.constant_expressions = (
-            {const.symbol: parser.parse(const.value) for const in problem.constants}
+            {const.symbol: parser.parse(const.value) if isinstance(const, Constant) else sp.Array(parser.parse(const.get_values()))
+            for const in problem.constants}
             if problem.constants is not None
             else None
         )
@@ -85,7 +87,7 @@ class SympyEvaluator:
 
         # always minimized objective expressions
         _objective_expressions_min = {
-            f"{obj.symbol}_min": -_objective_expressions[obj.symbol]
+            f"{obj.symbol}_min": -_objective_expressions[obj.symbol] # TODO: fix TypeError from -list, numpy arrays work
             if obj.maximize
             else _objective_expressions[obj.symbol]
             for obj in problem.objectives
@@ -204,7 +206,13 @@ class SympyEvaluator:
                 defined for the problem being evaluated and the corresponding expression's
                 value.
         """
-        return {k: self.lambda_exprs[k](**xs) for k in self.lambda_exprs} | xs
+        np_xs = {}
+        for var in self.problem.variables:
+            if isinstance(xs[var.symbol], list):
+                np_xs[var.symbol] = np.array(xs[var.symbol])
+            else:
+                np_xs[var.symbol] = xs[var.symbol]
+        return {k: self.lambda_exprs[k](**np_xs) for k in self.lambda_exprs} | np_xs
 
     def evaluate_target(self, xs: dict[str, float | int | bool], target: str) -> float:
         """Evaluates only the specified target with given decision variables.
@@ -217,7 +225,15 @@ class SympyEvaluator:
         Returns:
             float: the value of the target once evaluated.
         """
-        return self.lambda_exprs[target](**xs)
+        np_xs = {}
+        for var in self.problem.variables:
+            if isinstance(xs[var.symbol], list):
+                np_xs[var.symbol] = np.array(xs[var.symbol])
+            else:
+                np_xs[var.symbol] = xs[var.symbol]
+        if isinstance(self.lambda_exprs[target](**np_xs), np.ndarray):
+            return sum(self.lambda_exprs[target](**np_xs))
+        return self.lambda_exprs[target](**np_xs)
 
     def evaluate_constraints(self, xs: dict[str, float | int | bool]) -> dict[str, float | int | bool]:
         """Evaluates the constraints of the problem with given decision variables.

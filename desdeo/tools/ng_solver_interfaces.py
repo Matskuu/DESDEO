@@ -10,7 +10,7 @@ from typing import Literal
 import nevergrad as ng
 from pydantic import BaseModel, Field
 
-from desdeo.problem import Problem, SympyEvaluator
+from desdeo.problem import Problem, SympyEvaluator, TensorVariable, Variable
 from desdeo.tools.generics import SolverResults
 
 available_nevergrad_optimizers = [
@@ -127,16 +127,22 @@ class NevergradGenericSolver:
         Returns:
             SolverResults: the results of the optimization.
         """
-        parametrization = ng.p.Dict(
-            **{
-                var.symbol: ng.p.Scalar(
+        var_dict = {}
+        for var in self.problem.variables:
+            if isinstance(var, Variable):
+                var_dict[var.symbol] = ng.p.Scalar(
                     # sets the initial value of the variables, if None, then the
                     # mid-point of the lower and upper bounds is chosen as the
                     # initial value.
                     init=var.initial_value if var.initial_value is not None else (var.lowerbound + var.upperbound) / 2
                 ).set_bounds(var.lowerbound, var.upperbound)
-                for var in self.problem.variables
-            }
+            else:
+                var_dict[var.symbol] = ng.p.Array(
+                    init=var.get_initial_values() if var.initial_values is not None else (var.get_lowerbound_values() + var.get_upperbound_values()) / 2
+                )
+
+        parametrization = ng.p.Dict(
+            **var_dict
         )
 
         optimizer = ng.optimizers.registry[self.options.optimizer](
@@ -150,7 +156,7 @@ class NevergradGenericSolver:
         try:
             if optimizer.num_workers == 1:
                 # single thread
-                recommendation = optimizer.minimize(
+                recommendation = optimizer.minimize( # TODO:fix this returning None:None
                     lambda xs, t=target: self.evaluator.evaluate_target(xs, t),
                     constraint_violation=[
                         lambda xs, t=con_t: self.evaluator.evaluate_target(xs, t) for con_t in constraint_symbols

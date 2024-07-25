@@ -406,6 +406,16 @@ class MathParser:
         }
 
         def _sympy_matmul(*args):
+            def _matmul(a, b):
+                print(a,b)
+                if isinstance(a, list):
+                    a = np.array(a)
+                if isinstance(b, list):
+                    b = np.array(b)
+                if len(np.shape(a*b)) == 1:
+                    return a*b
+                return (a*b).sum()
+            return reduce(_matmul, args)
             """Sympy matrix multiplication."""
             msg = (
                 "Matrix multiplication '@' has not been implemented for the Sympy parser yet."
@@ -428,7 +438,7 @@ class MathParser:
             self.MUL: lambda *args: reduce(lambda x, y: to_sympy_expr(x) * to_sympy_expr(y), args),
             self.DIV: lambda *args: reduce(lambda x, y: to_sympy_expr(x) / to_sympy_expr(y), args),
             # Vector and matrix operations
-            self.MATMUL: _sympy_matmul,
+            self.MATMUL: lambda x, y: x*y,
             self.SUM: _sympy_summation,
             # Exponentiation and logarithms
             self.EXP: lambda x: sp.exp(to_sympy_expr(x)),
@@ -679,6 +689,7 @@ class MathParser:
         if isinstance(expr, list):
             # Extract the operation name
             if isinstance(expr[0], str) and expr[0] in self.env:
+                # ['MatMul', 'P', 'X']
                 op_name = expr[0]
                 # Parse the operands
                 operands = [self.parse(e) for e in expr[1:]]
@@ -693,7 +704,7 @@ class MathParser:
                 return self.env[op_name](operands)
 
             # else, assume the list contents are parseable expressions
-            return [self.parse(e) for e in expr]
+            return [self._parse_to_sympy(e) for e in expr]
 
         msg = f"Encountered unsupported type '{type(expr)}' during parsing."
         raise ParserError(msg)

@@ -1515,7 +1515,7 @@ def simple_knapsack_vectors():
     weights = TensorConstant(name="Weights of the items", symbol="W", shape=[len(weight_values)], values=weight_values)
     profits = TensorConstant(name="Profits", symbol="P", shape=[len(profit_values)], values=profit_values)
     efficiencies = TensorConstant(
-        name="Efficiencies", symbol="E", shape=[len(efficiency_values)], values=efficiency_values
+        name="Efficiencies", symbol="K", shape=[len(efficiency_values)], values=efficiency_values
     )
 
     choices = TensorVariable(
@@ -1543,7 +1543,7 @@ def simple_knapsack_vectors():
     efficiency_objective = Objective(
         name="max efficiency",
         symbol="f_2",
-        func="E@X",
+        func="K@X",
         maximize=True,
         ideal=7,
         nadir=0,
@@ -1573,5 +1573,18 @@ def simple_knapsack_vectors():
 
 
 if __name__ == "__main__":
-    problem = simple_scenario_test_problem()
-    print(problem.model_dump_json(indent=2))
+    #problem = simple_scenario_test_problem()
+    #print(problem.model_dump_json(indent=2))
+    from desdeo.tools import NevergradGenericOptions, NevergradGenericSolver, GurobipySolver
+    from desdeo.problem import SympyEvaluator
+
+    problem = simple_linear_test_problem()
+    #problem = simple_knapsack_vectors()
+
+    xs = {"X": [0.0, 0.0, 1.0, 0.0]}
+    #xs = {"x_1": 1, "x_2": 5}
+    #evaluator = SympyEvaluator(problem) # NOTE: SympyEvaluator kinda works when the input for variables is list
+    solver = NevergradGenericSolver(problem)
+    #res = solver.evaluate_target(xs, "f_1_min")
+    res = solver.solve("f_1_min")
+    print(res)
