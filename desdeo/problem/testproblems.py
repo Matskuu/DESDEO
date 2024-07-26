@@ -15,6 +15,8 @@ from desdeo.problem.schema import (
     Objective,
     ObjectiveTypeEnum,
     Problem,
+    TensorConstant,
+    TensorVariable,
     Variable,
     VariableTypeEnum,
 )
@@ -1045,7 +1047,12 @@ def simple_scenario_test_problem():
         scenario_keys=["s_1", "s_2"],
     )
 
-def re21() -> Problem:
+def re21(
+    f: float = 10.0,
+    sigma: float = 10.0,
+    e: float = 2.0 * 1e5,
+    l: float = 200.0
+) -> Problem:
     r"""Defines the four bar truss design problem.
 
     The objective functions and constraints for the four bar truss design problem are defined as follows:
@@ -1073,14 +1080,15 @@ def re21() -> Problem:
 
         https://github.com/ryojitanabe/reproblems/blob/master/reproblem_python_ver/reproblem.py
 
+    Args:
+        f (float, optional): Force (kN). Defaults to 10.0.
+        sigma (float. optional): Stress (kN/cm^2). Defaults to 10.0.
+        e (float, optional): Young modulus? (kN/cm^2). Defaults to 2.0 * 1e5.
+        l (float, optional): Length (cm). Defaults to 200.0.
+
     Returns:
         Problem: an instance of the four bar truss design problem.
     """
-    # should these be hardcoded here or given as optional arguments for the problem?
-    f = 10.0
-    sigma = 10.0
-    e = 2.0 * 1e5
-    l = 200.0
     a = f / sigma
 
     x_1 = Variable(
@@ -1121,14 +1129,18 @@ def re21() -> Problem:
         symbol="f_1",
         func=f"{l} * ((2 * x_1) + {np.sqrt(2.0)} * x_2 + Sqrt(x_3) + x_4)",
         objective_type=ObjectiveTypeEnum.analytical,
-        is_convex=True
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
     f_2 = Objective(
         name="f_2",
         symbol="f_2",
         func=f"({(f * l) / e} * ((2.0 / x_1) + (2.0 * {np.sqrt(2.0)} / x_2) - (2.0 * {np.sqrt(2.0)} / x_3) + (2.0 / x_4)))",
         objective_type=ObjectiveTypeEnum.analytical,
-        is_convex=True
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
 
     return Problem(
@@ -1214,33 +1226,46 @@ def re22() -> Problem:
         name="x_1_con",
         symbol="x_1_con",
         cons_type=ConstraintTypeEnum.EQ,
-        func=sum_expr
+        func=sum_expr,
+        is_linear=True
     )
 
     g_1 = Constraint(
         name="g_1",
         symbol="g_1",
         cons_type=ConstraintTypeEnum.LTE,
-        func=f"- (({x_1_eprs}) * x_3 - 7.735 * (({x_1_eprs})**2 / x_2) - 180)"
+        func=f"- (({x_1_eprs}) * x_3 - 7.735 * (({x_1_eprs})**2 / x_2) - 180)",
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
     g_2 = Constraint(
         name="g_2",
         symbol="g_2",
         cons_type=ConstraintTypeEnum.LTE,
-        func="-(4 - x_3 / x_2)"
+        func="-(4 - x_3 / x_2)",
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
 
     f_1 = Objective(
         name="f_1",
         symbol="f_1",
         func=f"29.4 * ({x_1_eprs}) + 0.6 * x_2 * x_3",
-        objective_type=ObjectiveTypeEnum.analytical
+        objective_type=ObjectiveTypeEnum.analytical,
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
     f_2 = Objective(
         name="f_2",
         symbol="f_2",
         func=f"Max(({x_1_eprs}) * x_3 - 7.735 * (({x_1_eprs})**2 / x_2) - 180, 0) + Max(4 - x_3 / x_2, 0)",
-        objective_type=ObjectiveTypeEnum.analytical
+        objective_type=ObjectiveTypeEnum.analytical,
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=False
     )
     return Problem(
         name="re22",
@@ -1313,32 +1338,47 @@ def re23() -> Problem:
         name="g_1",
         symbol="g_1",
         cons_type=ConstraintTypeEnum.LTE,
-        func=f"-({x_1_exprs} - 0.0193 * x_3)"
+        func=f"-({x_1_exprs} - 0.0193 * x_3)",
+        is_linear=True,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
     g_2 = Constraint(
         name="g_2",
         symbol="g_2",
         cons_type=ConstraintTypeEnum.LTE,
-        func=f"-({x_2_exprs} - 0.00954 * x_3)"
+        func=f"-({x_2_exprs} - 0.00954 * x_3)",
+        is_linear=True,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
     g_3 = Constraint(
         name="g_3",
         symbol="g_3",
         cons_type=ConstraintTypeEnum.LTE,
-        func=f"-({np.pi} * x_3**2 * x_4 + (4/3) * {np.pi} * x_3**3 - 1296000)"
+        func=f"-({np.pi} * x_3**2 * x_4 + (4/3) * {np.pi} * x_3**3 - 1296000)",
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
 
     f_1 = Objective(
         name="f_1",
         symbol="f_1",
         func=f"0.6224 * {x_1_exprs} * x_3 * x_4 + (1.7781 * {x_2_exprs} * x_3**2) + (3.1661 * {x_1_exprs}**2 * x_4) + (19.84 * {x_1_exprs}**2 * x_3)",
-        objective_type=ObjectiveTypeEnum.analytical
+        objective_type=ObjectiveTypeEnum.analytical,
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
     f_2 = Objective(
         name="f_2",
         symbol="f_2",
         func=f"Max({x_1_exprs} - 0.0193 * x_3, 0) + Max({x_2_exprs} - 0.00954 * x_3, 0) + Max({np.pi} * x_3**2 * x_4 + (4/3) * {np.pi} * x_3**3 - 1296000, 0)",
-        objective_type=ObjectiveTypeEnum.analytical
+        objective_type=ObjectiveTypeEnum.analytical,
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=False
     )
     return Problem(
         name="re23",
@@ -1404,38 +1444,56 @@ def re24() -> Problem:
         name="g_1",
         symbol="g_1",
         cons_type=ConstraintTypeEnum.LTE,
-        func=f"-(1 - {sigma_b} / 700)"
+        func=f"-(1 - {sigma_b} / 700)",
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
     g_2 = Constraint(
         name="g_2",
         symbol="g_2",
         cons_type=ConstraintTypeEnum.LTE,
-        func=f"-(1 - {tau} / 450)"
+        func=f"-(1 - {tau} / 450)",
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
     g_3 = Constraint(
         name="g_3",
         symbol="g_3",
         cons_type=ConstraintTypeEnum.LTE,
-        func=f"-(1 - {delta} / 1.5)"
+        func=f"-(1 - {delta} / 1.5)",
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
     g_4 = Constraint(
         name="g_4",
         symbol="g_4",
         cons_type=ConstraintTypeEnum.LTE,
-        func=f"-(1 - {sigma_b} / {sigma_k})"
+        func=f"-(1 - {sigma_b} / {sigma_k})",
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
 
     f_1 = Objective(
         name="f_1",
         symbol="f_1",
         func="x_1 + 120 * x_2",
-        objective_type=ObjectiveTypeEnum.analytical
+        objective_type=ObjectiveTypeEnum.analytical,
+        is_linear=True,
+        is_convex=False, # Not checked
+        is_twice_differentiable=True
     )
     f_2 = Objective(
         name="f_2",
         symbol="f_2",
         func=f"Max(1 - {sigma_b} / 700, 0) + Max(1 - {tau} / 450, 0) + Max(1 - {delta} / 1.5, 0) + Max(1 - {sigma_b} / {sigma_k}, 0)",
-        objective_type=ObjectiveTypeEnum.analytical
+        objective_type=ObjectiveTypeEnum.analytical,
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=False
     )
     return Problem(
         name="re24",
@@ -1560,6 +1618,74 @@ def re25() -> Problem:
         variables=variables,
         objectives=[f_1, f_2],
         constraints=[g_1, g_2, g_3, g_4, g_5, g_6, x_3_con]
+    )
+
+def simple_knapsack_vectors():
+    """Define a simple variant of the knapsack problem that utilizes vectors (TensorVaribale and TensorConstant)."""
+    n_items = 4
+    weight_values = [2, 3, 4, 5]
+    profit_values = [3, 5, 6, 8]
+    efficiency_values = [4, 2, 7, 3]
+
+    max_weight = Constant(name="Maximum weights", symbol="w_max", value=5)
+
+    weights = TensorConstant(name="Weights of the items", symbol="W", shape=[len(weight_values)], values=weight_values)
+    profits = TensorConstant(name="Profits", symbol="P", shape=[len(profit_values)], values=profit_values)
+    efficiencies = TensorConstant(
+        name="Efficiencies", symbol="E", shape=[len(efficiency_values)], values=efficiency_values
+    )
+
+    choices = TensorVariable(
+        name="Chosen items",
+        symbol="X",
+        shape=[n_items],
+        variable_type="binary",
+        lowerbounds=n_items * [0],
+        upperbounds=n_items * [1],
+        initial_values=n_items * [1],
+    )
+
+    profit_objective = Objective(
+        name="max profit",
+        symbol="f_1",
+        func="P@X",
+        maximize=True,
+        ideal=8,
+        nadir=0,
+        is_linear=True,
+        is_convex=False,
+        is_twice_differentiable=False,
+    )
+
+    efficiency_objective = Objective(
+        name="max efficiency",
+        symbol="f_2",
+        func="E@X",
+        maximize=True,
+        ideal=7,
+        nadir=0,
+        is_linear=True,
+        is_convex=False,
+        is_twice_differentiable=False,
+    )
+
+    weight_constraint = Constraint(
+        name="Weight constraint",
+        symbol="g_1",
+        cons_type="<=",
+        func="W@X - w_max",
+        is_linear=True,
+        is_convex=False,
+        is_twice_differentiable=False,
+    )
+
+    return Problem(
+        name="Simple two-objective Knapsack problem",
+        description="A simple variant of the classic combinatorial problem.",
+        constants=[max_weight, weights, profits, efficiencies],
+        variables=[choices],
+        objectives=[profit_objective, efficiency_objective],
+        constraints=[weight_constraint],
     )
 
 if __name__ == "__main__":
