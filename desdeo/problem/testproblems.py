@@ -1698,12 +1698,12 @@ if __name__ == "__main__":
 
     xs = {"x_1": 35, "x_2": 15.5}
     for i in range(len(problem.variables) - 2):
-        if i == 32:
+        if i == 31:
             xs[f"x_3_{i}"] = 1
         else:
             xs[f"x_3_{i}"] = 0
 
-    print(problem.variables, xs)
+    #print(problem.variables, xs)
 
     res = evaluator.evaluate(xs)
 
