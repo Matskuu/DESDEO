@@ -1746,35 +1746,5 @@ def simple_knapsack_vectors():
     )
 
 if __name__ == "__main__":
-    #problem = simple_scenario_test_problem()
-    #print(problem.model_dump_json(indent=2))
-    problem = re25(testing=True)
-    from desdeo.problem import GenericEvaluator
-
-    evaluator = GenericEvaluator(problem)
-
-    xs = {"x_1": 35, "x_2": 15.5}
-    for i in range(len(problem.variables) - 2):
-        if i == 31:
-            xs[f"x_3_{i}"] = 1
-        else:
-            xs[f"x_3_{i}"] = 0
-
-    res = evaluator.evaluate(xs)
-
-    obj_values = [res[obj.symbol][0] for obj in problem.objectives]
-    print(np.allclose(obj_values, np.array([60.6336716, 34638.44539181])))
-
-    xs = {"x_1": 2, "x_2": 22.2}
-    for i in range(len(problem.variables) - 2):
-        if i == 39:
-            xs[f"x_3_{i}"] = 1
-        else:
-            xs[f"x_3_{i}"] = 0
-
-    res = evaluator.evaluate(xs)
-
-    obj_values = [res[obj.symbol][0] for obj in problem.objectives]
-    print(np.allclose(obj_values, np.array([34.0130175755, 494.270212155])))
-
-
+    problem = simple_scenario_test_problem()
+    print(problem.model_dump_json(indent=2))
