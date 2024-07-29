@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from desdeo.problem import GenericEvaluator, dtlz2, re21, re22, re23, re24
+from desdeo.problem import GenericEvaluator, dtlz2, re21, re22, re23, re24, re25
 
 
 def test_dtlz2():
@@ -91,3 +91,33 @@ def test_re24():
     for i in range(len(res)):
         obj_values = np.array([res[obj.symbol][i] for obj in problem.objectives])
         assert np.allclose(obj_values, expected_result[i])
+
+def test_re25():
+    """Test that the coil compression spring design problem evaluates correctly."""
+    problem = re25(testing=True)
+
+    evaluator = GenericEvaluator(problem)
+
+    xs = {"x_1": 35, "x_2": 15.5}
+    for i in range(len(problem.variables) - 2):
+        if i == 31:
+            xs[f"x_3_{i}"] = 1
+        else:
+            xs[f"x_3_{i}"] = 0
+
+    res = evaluator.evaluate(xs)
+
+    obj_values = [res[obj.symbol][0] for obj in problem.objectives]
+    assert np.allclose(obj_values, np.array([60.6336716, 34638.44539181]))
+
+    xs = {"x_1": 2, "x_2": 22.2}
+    for i in range(len(problem.variables) - 2):
+        if i == 39:
+            xs[f"x_3_{i}"] = 1
+        else:
+            xs[f"x_3_{i}"] = 0
+
+    res = evaluator.evaluate(xs)
+
+    obj_values = [res[obj.symbol][0] for obj in problem.objectives]
+    assert np.allclose(obj_values, np.array([34.0130175755, 494.270212155]))

@@ -1503,7 +1503,50 @@ def re24() -> Problem:
         constraints=[g_1, g_2, g_3, g_4]
     )
 
-def re25() -> Problem:
+def re25(testing: bool = False) -> Problem:
+    r"""The coil compression spring design problem.
+
+    The objective functions and constraints for the coil compression spring design problem are defined as follows:
+
+    \begin{align}
+        &\min_{\mathbf{x}} & f_1(\mathbf{x}) & = \frac{\pi^2x_2x^2_3(x_1+2)}{4} \\
+        & & f_2(\mathbf{x}) & = \sum_{i=1}^6 \max\{g_i(\mathbf{x}), 0\} \\
+        &\text{s.t.,}   & g_1(\mathbf{x}) & = -\frac{8C_fF_{\text{max}}x_2}{\pi x^3_3}+S \geq 0,\\
+        & & g_2(\mathbf{x}) & = -l_f+l_{\text{max}} \geq 0, \\
+        & & g_3(\mathbf{x}) & = -3+\frac{x_2}{x_3} \geq 0, \\
+        & & g_4(\mathbf{x}) & = -\sigma_p +\sigma_{pm} \geq 0, \\
+        & & g_5(\mathbf{x}) & = -\sigma_p -\frac{F_{\text{max}}-F_p}{K}-1.05(x_1+2)x_3+l_f \geq 0, \\
+        & & g_6(\mathbf{x}) & = -\sigma_w + \frac{F_{\text{max}}-F_p}{K} \geq 0, \\
+        & & C_f & = \frac{4(x_2/x_3)-1}{4(x_2/x_3)-4}+\frac{0.615x_3}{x_2}, \\
+        & & K & = \frac{Gx^4_3}{8x_1x^3_2}, \\
+        & & \sigma_p & = \frac{F_p}{K}, \\
+        & & l_f & = \frac{F_{\text{max}}}{K}+1.05(x_1+2)x_3,
+    \end{align}
+
+    where $x_1 \in \{1,\dots, 70\}$ and $x_2 \in [0.6, 30]$ and $x_3$ has a predefined discrete value
+    from $0.009$ to $0.5$. $x_1, x_2$ and $x_3$ indicate the number of spring coils, the outside diameter of
+    the spring, and the spring wire diameter, respectively. The parameters are defined as
+    $F_{\text{max}}=1000\,\text{lb}$, $S=189\,000\,\text{psi}$, $\l_{\text{max}}=14\,\text{inch}$,
+    $d_{\text{min}}=0.2\,\text{inch}$, $D_{\text{max}}=3\,\text{inch}$, $F_p=300\,\text{lb}$,
+    $\sigma_{pm} =6\,\text{inch}$, $\sigma_w=1.25\,\text{inch}$, and $G=11.5\times10^6$.
+
+    References:
+        Lampinen, J. & Zelinka, Ivan. (2000). Mixed integer-discrete-continuous optimization by
+            differential evolution - part 2: a practical example.
+
+        Tanabe, R. & Ishibuchi, H. (2020). An easy-to-use real-world multi-objective
+            optimization problem suite. Applied soft computing, 89, 106078.
+            https://doi.org/10.1016/j.asoc.2020.106078.
+
+        https://github.com/ryojitanabe/reproblems/blob/master/reproblem_python_ver/reproblem.py
+
+    Args:
+        testing (bool, optional): determines whether the problem is used in testing in comparison to the old
+            implementation in the old desdeo. Defaults to False.
+
+    Returns:
+        Problem: an instance of the coil compression spring design problem.
+    """
     x_1 = Variable(
         name="x_1",
         symbol="x_1",
@@ -1527,7 +1570,7 @@ def re25() -> Problem:
     variables = [x_1, x_2]
 
     # forming a set of variables and a constraint to make sure x_1 is from the set of feasible values
-    x_3_eprs = []
+    x_3_exprs = []
     for i in range(len(feasible_values)):
         x = Variable(
             name=f"x_3_{i}",
@@ -1538,8 +1581,8 @@ def re25() -> Problem:
         )
         variables.append(x)
         expr = f"x_3_{i} * {feasible_values[i]}"
-        x_3_eprs.append(expr)
-    x_3_eprs = " + ".join(x_3_eprs)
+        x_3_exprs.append(expr)
+    x_3_exprs = " + ".join(x_3_exprs)
 
     sum_expr = [f"x_3_{i}" for i in range(len(feasible_values))]
     sum_expr = " + ".join(sum_expr) + " - 1"
@@ -1551,17 +1594,25 @@ def re25() -> Problem:
         func=sum_expr
     )
 
-    c_f = f"((4 * (x_2 / {x_3_eprs}) - 1) / (4 * (x_2 / {x_3_eprs}) - 4) + ((0.615 * {x_3_eprs}) / x_2))"
-    k = f"((11.5 * 10**6 * {x_3_eprs}**4) / (8 * x_1 * x_2**3))"
+    c_f = f"(((4 * (x_2 / ({x_3_exprs})) - 1) / (4 * (x_2 / ({x_3_exprs})) - 4)) + (0.615 * ({x_3_exprs}) / x_2))"
+    k = f"((11.5 * 10**6 * ({x_3_exprs})**4) / (8 * x_1 * x_2**3))"
     sigma_p = f"(300 / {k})"
-    l_f = f"((1000 / {k}) + (1.05 * (x_1 + 2) * {x_3_eprs}))"
+    l_f = f"((1000 / {k}) + (1.05 * (x_1 + 2) * ({x_3_exprs})))"
 
-    g_1_exprs = f"(8 * {c_f} * 1000 * x_2) / ({np.pi} * {x_3_eprs}**3) - 189000"
-    g_2_exprs = f"{l_f} - 14"
-    g_3_exprs = f"3 - (x_2 / {x_3_eprs})"
-    g_4_exprs = f"{sigma_p} - 6"
-    g_5_exprs = f"{sigma_p} + ((1000 - 300) / {k}) + 1.05 * (x_1 + 2) * {x_3_eprs} - {l_f}"
-    g_6_exprs = f"1.25 - ((1000 - 300) / {k})"
+    if testing:
+        g_1_exprs = f"-(8 * {c_f} * 1000 * x_2) / ({np.pi} * ({x_3_exprs})**3) + 189000"
+        g_2_exprs = f"-{l_f} + 14"
+        g_3_exprs = f"-3 + (x_2 / ({x_3_exprs}))"
+        g_4_exprs = f"-{sigma_p} + 6"
+        g_5_exprs = f"-{sigma_p} - ((1000 - 300) / {k}) - 1.05 * (x_1 + 2) * ({x_3_exprs}) + {l_f}"
+        g_6_exprs = f"-1.25 + ((1000 - 300) / {k})"
+    else:
+        g_1_exprs = f"-(-(8 * {c_f} * 1000 * x_2) / ({np.pi} * ({x_3_exprs})**3) + 189000)"
+        g_2_exprs = f"-(-{l_f} + 14)"
+        g_3_exprs = f"-(-3 + (x_2 / ({x_3_exprs})))"
+        g_4_exprs = f"-(-{sigma_p} + 6)"
+        g_5_exprs = f"-(-{sigma_p} - ((1000 - 300) / {k}) - 1.05 * (x_1 + 2) * ({x_3_exprs}) + {l_f})"
+        g_6_exprs = f"-(-1.25 + ((1000 - 300) / {k}))"
 
     g_1 = Constraint(
         name="g_1",
@@ -1603,18 +1654,24 @@ def re25() -> Problem:
     f_1 = Objective(
         name="f_1",
         symbol="f_1",
-        func=f"({np.pi}**2 * x_2 * {x_3_eprs}**2 * (x_1 + 2)) / 4",
-        objective_type=ObjectiveTypeEnum.analytical
+        func=f"({np.pi}**2 * x_2 * ({x_3_exprs})**2 * (x_1 + 2)) / 4",
+        objective_type=ObjectiveTypeEnum.analytical,
+        is_linear=False,
+        is_convex=False, # not checked
+        is_twice_differentiable=True
     )
     f_2 = Objective(
         name="f_2",
         symbol="f_2",
         func=f"Max({g_1_exprs}, 0) + Max({g_2_exprs}, 0) + Max({g_3_exprs}, 0) + Max({g_4_exprs}, 0) + Max({g_5_exprs}, 0) + Max({g_6_exprs}, 0)",
-        objective_type=ObjectiveTypeEnum.analytical
+        objective_type=ObjectiveTypeEnum.analytical,
+        is_linear=False,
+        is_convex=False, # Not checked
+        is_twice_differentiable=False
     )
     return Problem(
         name="re25",
-        description="",
+        description="The coil compression spring design problem",
         variables=variables,
         objectives=[f_1, f_2],
         constraints=[g_1, g_2, g_3, g_4, g_5, g_6, x_3_con]
@@ -1691,9 +1748,9 @@ def simple_knapsack_vectors():
 if __name__ == "__main__":
     #problem = simple_scenario_test_problem()
     #print(problem.model_dump_json(indent=2))
-    problem = re25()
-
+    problem = re25(testing=True)
     from desdeo.problem import GenericEvaluator
+
     evaluator = GenericEvaluator(problem)
 
     xs = {"x_1": 35, "x_2": 15.5}
@@ -1703,11 +1760,21 @@ if __name__ == "__main__":
         else:
             xs[f"x_3_{i}"] = 0
 
-    #print(problem.variables, xs)
+    res = evaluator.evaluate(xs)
+
+    obj_values = [res[obj.symbol][0] for obj in problem.objectives]
+    print(np.allclose(obj_values, np.array([60.6336716, 34638.44539181])))
+
+    xs = {"x_1": 2, "x_2": 22.2}
+    for i in range(len(problem.variables) - 2):
+        if i == 39:
+            xs[f"x_3_{i}"] = 1
+        else:
+            xs[f"x_3_{i}"] = 0
 
     res = evaluator.evaluate(xs)
 
     obj_values = [res[obj.symbol][0] for obj in problem.objectives]
-    print(obj_values)
+    print(np.allclose(obj_values, np.array([34.0130175755, 494.270212155])))
 
 

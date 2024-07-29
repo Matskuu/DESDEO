@@ -75,6 +75,36 @@ where $x_1 \in [0.5, 4]$ and $x_2 \in [4, 50]$. The parameters are defined as $\
 
 Here is an approximation of the hatch cover design problem's Pareto front:
 
+## The coil compression spring design problem (RE25)
+
+In the coil compression spring design problem [5], the first objective is to minimize the weight of the volume of spring steel wire that is used to manufacture the spring. The second objective is to minimize the sum of the six constraint violations. The first decision variable $x_1$ is integer valued, the second decision variable $x_2$ is real valued and the third decision variable has a predefined discrete value[^2] from 0.009 to 0.5.
+
+The objective functions and constraints for the coil compression spring design problem are defined as follows:
+
+$$\begin{align}
+    &\min_{\mathbf{x}} & f_1(\mathbf{x}) & = \frac{\pi^2x_2x^2_3(x_1+2)}{4} \\
+    & & f_2(\mathbf{x}) & = \sum_{i=1}^6 \max\{g_i(\mathbf{x}), 0\} \\
+    &\text{s.t.,}   & g_1(\mathbf{x}) & = -\frac{8C_fF_{\text{max}}x_2}{\pi x^3_3}+S \geq 0,\\
+    & & g_2(\mathbf{x}) & = -l_f+l_{\text{max}} \geq 0, \\
+    & & g_3(\mathbf{x}) & = -3+\frac{x_2}{x_3} \geq 0, \\
+    & & g_4(\mathbf{x}) & = -\sigma_p +\sigma_{pm} \geq 0, \\
+    & & g_5(\mathbf{x}) & = -\sigma_p -\frac{F_{\text{max}}-F_p}{K}-1.05(x_1+2)x_3+l_f \geq 0, \\
+    & & g_6(\mathbf{x}) & = -\sigma_w + \frac{F_{\text{max}}-F_p}{K} \geq 0, \\
+    & & C_f & = \frac{4(x_2/x_3)-1}{4(x_2/x_3)-4}+\frac{0.615x_3}{x_2}, \\
+    & & K & = \frac{Gx^4_3}{8x_1x^3_2}, \\
+    & & \sigma_p & = \frac{F_p}{K}, \\
+    & & l_f & = \frac{F_{\text{max}}}{K}+1.05(x_1+2)x_3,
+\end{align}$$
+
+where $x_1 \in \{1,\dots, 70\}$ and $x_2 \in [0.6, 30]$ and $x_3$ has a predefined discrete value[^2]
+from $0.009$ to $0.5$. $x_1, x_2$ and $x_3$ indicate the number of spring coils, the outside diameter of
+the spring, and the spring wire diameter, respectively. The parameters are defined as
+$F_{\text{max}}=1000\,\text{lb}$, $S=189\,000\,\text{psi}$, $l_{\text{max}}=14\,\text{inch}$,
+$d_{\text{min}}=0.2\,\text{inch}$, $D_{\text{max}}=3\,\text{inch}$, $F_p=300\,\text{lb}$,
+$\sigma_{pm} =6\,\text{inch}$, $\sigma_w=1.25\,\text{inch}$, and $G=11.5\times10^6$.
+
+Here is an approximation of the coil compression spring design problem's Pareto front:
+
 ## References
 [1]: Cheng, F. Y., & Li, X. S. (1999). Generalized center method for multiobjective engineering optimization. Engineering Optimization, 31(5), 641-661.
 
@@ -84,4 +114,8 @@ Here is an approximation of the hatch cover design problem's Pareto front:
 
 [4]: Kannan, B. K., & Kramer, S. N. (1994). An augmented Lagrange multiplier based method for mixed integer discrete continuous optimization and its applications to mechanical design.
 
+[5]: Lampinen, J. & Zelinka, Ivan. (2000). Mixed integer-discrete-continuous optimization by differential evolution - part 2: a practical example.
+
 [^1]: A set of predefined discrete values for the first decision variable: {0.2, 0.31, 0.4, 0.44, 0.6, 0.62, 0.79, 0.8, 0.88, 0.93, 1, 1.2, 1.24, 1.32, 1.4, 1.55, 1.58, 1.6, 1.76, 1.8, 1.86, 2, 2.17, 2.2, 2.37, 2.4, 2.48, 2.6, 2.64, 2.79, 2.8, 3, 3.08, 3, 1, 3.16, 3.41, 3.52, 3.6, 3.72, 3.95, 3.96, 4, 4.03, 4.2, 4.34, 4.4, 4.65, 4.74, 4.8, 4.84, 5, 5.28, 5.4, 5.53, 5.72, 6, 6.16, 6.32, 6.6, 7.11, 7.2, 7.8, 7.9, 8, 8.4, 8.69, 9, 9.48, 10.27, 11, 11.06, 11.85, 12, 13, 14, 15}.
+
+[^2]: A set of predefined discrete values for the third decision variable:  {0.009, 0.0095, 0.0104, 0.0118, 0.0128, 0.0132, 0.014, 0.015, 0.0162, 0.0173, 0.018, 0.02, 0.023, 0.025, 0.028, 0.032, 0.035, 0.041, 0.047, 0.054, 0.063, 0.072, 0.08, 0.092, 0.105, 0.12, 0.135, 0.148, 0.162, 0.177, 0.192, 0.207, 0.225, 0.244, 0.263, 0.283, 0.307, 0.331, 0.362, 0.394, 0.4375, 0.5}.

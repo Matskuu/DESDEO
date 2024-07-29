@@ -21,6 +21,7 @@ nav:
       - "Parsing and evaluating": "explanation/parsing_and_evaluating.md"
       - "Scalarization": "explanation/scalarization.md"
       - "Solvers": "explanation/solvers.md"
+      - "Test problems": "explanation/test_problems.md"
   - "Guides":
       - "": "howtoguides/index.md"
       - "How to define a multiobjective optimization problem": "howtoguides/problem.md"
