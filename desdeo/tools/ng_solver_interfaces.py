@@ -139,7 +139,7 @@ class NevergradGenericSolver:
             else:
                 var_dict[var.symbol] = ng.p.Array(
                     init=var.get_initial_values() if var.initial_values is not None else (var.get_lowerbound_values() + var.get_upperbound_values()) / 2
-                )
+                ).set_bounds(var.get_lowerbound_values(), var.get_upperbound_values())
 
         parametrization = ng.p.Dict(
             **var_dict

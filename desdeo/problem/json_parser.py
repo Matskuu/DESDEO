@@ -407,14 +407,10 @@ class MathParser:
 
         def _sympy_matmul(*args):
             def _matmul(a, b):
-                print(a,b)
+                print(type(a))
                 if isinstance(a, list):
-                    a = np.array(a)
-                if isinstance(b, list):
-                    b = np.array(b)
-                if len(np.shape(a*b)) == 1:
-                    return a*b
-                return (a*b).sum()
+                    new_a = sp.Matrix(a)
+                return new_a*b
             return reduce(_matmul, args)
             """Sympy matrix multiplication."""
             msg = (

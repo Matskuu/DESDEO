@@ -9,6 +9,11 @@ from desdeo.problem.json_parser import FormatEnum, MathParser
 from desdeo.problem.schema import Constant, Problem, TensorVariable
 
 
+def get_sum(data):
+    if isinstance(data, np.ndarray) and isinstance(data[0], np.ndarray):
+        return sum([get_sum(data[i]) for i in range(len(data))])
+    return sum(data)
+
 class SympyEvaluator:
     """Defines an evaluator that can be used to evaluate instances of Problem utilizing sympy."""
 
@@ -212,7 +217,14 @@ class SympyEvaluator:
                 np_xs[var.symbol] = np.array(xs[var.symbol])
             else:
                 np_xs[var.symbol] = xs[var.symbol]
-        return {k: self.lambda_exprs[k](**np_xs) for k in self.lambda_exprs} | np_xs
+        ret = {}
+        for k in self.lambda_exprs:
+            if isinstance(self.lambda_exprs[k](**np_xs), np.ndarray):
+                print(self.lambda_exprs[k](**np_xs))
+                ret[k] = get_sum(self.lambda_exprs[k](**np_xs))
+            else:
+                ret[k] = self.lambda_exprs[k](**np_xs)
+        return ret | np_xs
 
     def evaluate_target(self, xs: dict[str, float | int | bool], target: str) -> float:
         """Evaluates only the specified target with given decision variables.
@@ -232,7 +244,7 @@ class SympyEvaluator:
             else:
                 np_xs[var.symbol] = xs[var.symbol]
         if isinstance(self.lambda_exprs[target](**np_xs), np.ndarray):
-            return sum(self.lambda_exprs[target](**np_xs))
+            return get_sum(self.lambda_exprs[target](**np_xs))
         return self.lambda_exprs[target](**np_xs)
 
     def evaluate_constraints(self, xs: dict[str, float | int | bool]) -> dict[str, float | int | bool]:
@@ -246,4 +258,17 @@ class SympyEvaluator:
             dict[str, float | int | bool]: a dict with keys being the constraints symbols
                 and values being the value of the corresponding constraint.
         """
-        return {k: self.lambda_exprs[k](**xs) for k in [constr.symbol for constr in self.problem.constraints]}
+        np_xs = {}
+        for var in self.problem.variables:
+            if isinstance(xs[var.symbol], list):
+                np_xs[var.symbol] = np.array(xs[var.symbol])
+            else:
+                np_xs[var.symbol] = xs[var.symbol]
+        ret = {}
+        for k in [constr.symbol for constr in self.problem.constraints]:
+            if isinstance(self.lambda_exprs[k](**np_xs), np.ndarray):
+                ret[k] = get_sum(self.lambda_exprs[k](**np_xs))
+            else:
+                ret[k] = self.lambda_exprs[k](**np_xs)
+        return ret | np_xs
+        #return {k: self.lambda_exprs[k](**xs) for k in [constr.symbol for constr in self.problem.constraints]}

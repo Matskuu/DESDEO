@@ -1515,7 +1515,7 @@ def simple_knapsack_vectors():
     weights = TensorConstant(name="Weights of the items", symbol="W", shape=[len(weight_values)], values=weight_values)
     profits = TensorConstant(name="Profits", symbol="P", shape=[len(profit_values)], values=profit_values)
     efficiencies = TensorConstant(
-        name="Efficiencies", symbol="K", shape=[len(efficiency_values)], values=efficiency_values
+        name="Efficiencies", symbol="_E", shape=[len(efficiency_values)], values=efficiency_values
     )
 
     choices = TensorVariable(
@@ -1543,7 +1543,7 @@ def simple_knapsack_vectors():
     efficiency_objective = Objective(
         name="max efficiency",
         symbol="f_2",
-        func="K@X",
+        func="_E@X",
         maximize=True,
         ideal=7,
         nadir=0,
@@ -1561,6 +1561,62 @@ def simple_knapsack_vectors():
         is_convex=False,
         is_twice_differentiable=False,
     )
+    """n_items = 4
+    weight_values = [[2, 3, 4, 5], [2, 3, 4, 5]]
+    profit_values = [[3, 5, 6, 8], [3, 5, 6, 8]]
+    efficiency_values = [[4, 2, 7, 3], [4, 2, 7, 3]]
+
+    max_weight = Constant(name="Maximum weights", symbol="w_max", value=5)
+
+    weights = TensorConstant(name="Weights of the items", symbol="W", shape=[2, len(weight_values)], values=weight_values)
+    profits = TensorConstant(name="Profits", symbol="P", shape=[2, len(profit_values)], values=profit_values)
+    efficiencies = TensorConstant(
+        name="Efficiencies", symbol="_E", shape=[2, len(efficiency_values)], values=efficiency_values
+    )
+
+    choices = TensorVariable(
+        name="Chosen items",
+        symbol="X",
+        shape=[n_items, 2],
+        variable_type="binary",
+        lowerbounds=[[0,0,0,0], [0,0,0,0]],
+        upperbounds=[[1,1,1,1], [1,1,1,1]],
+        initial_values=[[1,1,1,1], [1,1,1,1]],
+    )
+
+    profit_objective = Objective(
+        name="max profit",
+        symbol="f_1",
+        func="P@X",
+        maximize=True,
+        ideal=8,
+        nadir=0,
+        is_linear=True,
+        is_convex=False,
+        is_twice_differentiable=False,
+    )
+
+    efficiency_objective = Objective(
+        name="max efficiency",
+        symbol="f_2",
+        func="_E@X",
+        maximize=True,
+        ideal=7,
+        nadir=0,
+        is_linear=True,
+        is_convex=False,
+        is_twice_differentiable=False,
+    )
+
+    weight_constraint = Constraint(
+        name="Weight constraint",
+        symbol="g_1",
+        cons_type="<=",
+        func="W@X - w_max",
+        is_linear=True,
+        is_convex=False,
+        is_twice_differentiable=False,
+    )"""
 
     return Problem(
         name="Simple two-objective Knapsack problem",
@@ -1579,12 +1635,14 @@ if __name__ == "__main__":
     from desdeo.problem import SympyEvaluator
 
     problem = simple_linear_test_problem()
-    #problem = simple_knapsack_vectors()
+    problem = simple_knapsack_vectors()
 
     xs = {"X": [0.0, 0.0, 1.0, 0.0]}
+    #xs = {"X": [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]]}
     #xs = {"x_1": 1, "x_2": 5}
-    #evaluator = SympyEvaluator(problem) # NOTE: SympyEvaluator kinda works when the input for variables is list
+    evaluator = SympyEvaluator(problem) # NOTE: SympyEvaluator kinda works when the input for variables is list
+    #res = evaluator.evaluate_target(xs, "f_2_min")
+    res = evaluator.evaluate(xs)
     solver = NevergradGenericSolver(problem)
-    #res = solver.evaluate_target(xs, "f_1_min")
-    res = solver.solve("f_1_min")
+    res = solver.solve("f_2_min")
     print(res)
