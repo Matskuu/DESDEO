@@ -434,7 +434,8 @@ class MathParser:
             self.MUL: lambda *args: reduce(lambda x, y: to_sympy_expr(x) * to_sympy_expr(y), args),
             self.DIV: lambda *args: reduce(lambda x, y: to_sympy_expr(x) / to_sympy_expr(y), args),
             # Vector and matrix operations
-            self.MATMUL: lambda x, y: x*y,
+            #self.MATMUL: lambda x, y: sp.MatMul(sp.MatrixSymbol(x,1,1),sp.MatrixSymbol(y,1,1)),
+            self.MATMUL: lambda x, y: sp.MatMul(x, y),
             self.SUM: _sympy_summation,
             # Exponentiation and logarithms
             self.EXP: lambda x: sp.exp(to_sympy_expr(x)),
@@ -685,7 +686,6 @@ class MathParser:
         if isinstance(expr, list):
             # Extract the operation name
             if isinstance(expr[0], str) and expr[0] in self.env:
-                # ['MatMul', 'P', 'X']
                 op_name = expr[0]
                 # Parse the operands
                 operands = [self.parse(e) for e in expr[1:]]

@@ -92,7 +92,7 @@ class SympyEvaluator:
 
         # always minimized objective expressions
         _objective_expressions_min = {
-            f"{obj.symbol}_min": -_objective_expressions[obj.symbol] # TODO: fix TypeError from -list, numpy arrays work
+            f"{obj.symbol}_min": -_objective_expressions[obj.symbol]
             if obj.maximize
             else _objective_expressions[obj.symbol]
             for obj in problem.objectives
@@ -178,6 +178,7 @@ class SympyEvaluator:
 
         else:
             _scalarization_expressions = None
+        print(_objective_expressions)
 
         # initialize callable lambdas
         self.lambda_exprs = {
