@@ -1640,9 +1640,10 @@ if __name__ == "__main__":
     xs = {"X": [0.0, 0.0, 1.0, 0.0]}
     xs = {"X": [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]]}
     #xs = {"x_1": 1, "x_2": 5}
-    #evaluator = SympyEvaluator(problem) # NOTE: SympyEvaluator kinda works when the input for variables is list
+    #evaluator = SympyEvaluator(problem)
     #res = evaluator.evaluate_target(xs, "f_2_min")
     #res = evaluator.evaluate(xs)
-    solver = NevergradGenericSolver(problem)
+    options = NevergradGenericOptions(optimizer="PortfolioDiscreteOnePlusOne")
+    solver = NevergradGenericSolver(problem, options=options)
     res = solver.solve("f_2_min")
     print(res)
