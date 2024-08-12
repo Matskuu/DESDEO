@@ -156,7 +156,7 @@ class NevergradGenericSolver:
         try:
             if optimizer.num_workers == 1:
                 # single thread
-                recommendation = optimizer.minimize( # TODO:fix this returning None:None
+                recommendation = optimizer.minimize(
                     lambda xs, t=target: self.evaluator.evaluate_target(xs, t),
                     constraint_violation=[
                         lambda xs, t=con_t: self.evaluator.evaluate_target(xs, t) for con_t in constraint_symbols

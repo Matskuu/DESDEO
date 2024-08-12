@@ -6,7 +6,7 @@ import numpy as np
 import sympy as sp
 
 from desdeo.problem.json_parser import FormatEnum, MathParser
-from desdeo.problem.schema import Constant, Problem, TensorVariable
+from desdeo.problem.schema import Constant, Problem, TensorVariable, Variable
 
 
 def get_sum(data):
@@ -26,7 +26,14 @@ class SympyEvaluator:
         # Collect all the symbols and expressions in the problem
         parser = MathParser(to_format=FormatEnum.sympy)
 
-        self.variable_symbols = [var.symbol for var in problem.variables]
+        #self.variable_symbols = [var.symbol for var in problem.variables]
+        self.variable_symbols = []
+        for var in problem.variables:
+            if isinstance(var, Variable):
+                self.variable_symbols.append(sp.Symbol(var.symbol))
+            else:
+                self.variable_symbols.append(sp.MatrixSymbol(var.symbol,1,1))
+
         self.constant_expressions = (
             {const.symbol: parser.parse(const.value) if isinstance(const, Constant) else sp.Array(parser.parse(const.get_values()))
             for const in problem.constants}
@@ -178,7 +185,6 @@ class SympyEvaluator:
 
         else:
             _scalarization_expressions = None
-        print(_objective_expressions)
 
         # initialize callable lambdas
         self.lambda_exprs = {
@@ -221,7 +227,6 @@ class SympyEvaluator:
         ret = {}
         for k in self.lambda_exprs:
             if isinstance(self.lambda_exprs[k](**np_xs), np.ndarray):
-                print(self.lambda_exprs[k](**np_xs))
                 ret[k] = get_sum(self.lambda_exprs[k](**np_xs))
             else:
                 ret[k] = self.lambda_exprs[k](**np_xs)
