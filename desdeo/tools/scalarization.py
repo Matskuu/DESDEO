@@ -377,6 +377,119 @@ def add_group_asf_diff(
     return _problem.add_constraints(constraints), symbol
 
 
+def add_group_asf_utopia(
+    problems: list[Problem],
+    symbol: str,
+    reference_points: list[dict[str, float]],
+    delta: float = 1e-6,
+    rho: float = 1e-6
+) -> tuple[Problem, str]:
+    r"""Add the differentiable variant of the achievement scalarizing function for multiple decision makers.
+
+    The scalarization function is defined as follows:
+
+    \begin{align}
+        &\mbox{minimize} &&\alpha +
+        \rho \sum^k_{i=1} \sum^{n_d}_{d=1} w_{id}f_{id}(\mathbf{x}) \\
+        &\mbox{subject to} && w_{id}(f_{id}(\mathbf{x})-\overline{z}_{id}) - \alpha \leq 0,\\
+        &&&\mathbf{x} \in \mathbf{X},
+    \end{align}
+
+    where $w_{id} = \frac{1}{z^{nad}_{id} - z^{uto}_{id}}$.
+
+    Args:
+        problem (Problem): the problem to which the scalarization function should be added.
+        symbol (str): the symbol to reference the added scalarization function.
+        reference_points (list[dict[str, float]]): a list of reference points as objective dicts.
+        delta (float, optional): a small scalar used to define the utopian point. Defaults to 1e-6.
+        rho (float, optional): the weight factor used in the augmentation term. Defaults to 1e-6.
+
+    Raises:
+        ScalarizationError: there are missing elements in any reference point.
+
+    Returns:
+        tuple[Problem, str]: A tuple containing a copy of the problem with the scalarization function added,
+            and the symbol of the added scalarization function.
+    """
+    if len(problems) != len(reference_points):
+        msg = f"Not every DM has given their preferences. {len(problems)} DM's and {len(reference_points)} reference points."
+        raise ScalarizationError(msg)
+
+    # define the auxiliary variable
+    alpha = Variable(name="alpha", symbol="_alpha", variable_type=VariableTypeEnum.real, lowerbound=-float("Inf"), upperbound=float("Inf"), initial_value=1.0)
+    from desdeo.problem import FormatEnum, MathParser
+    constraints = []
+    for i in range(len(problems)):
+        problem = problems[i]
+        reference_point = reference_points[i]
+        # check reference points
+        if not objective_dict_has_all_symbols(problem, reference_point):
+            msg = f"The give reference point {reference_point} is missing a value for one or more objectives."
+            raise ScalarizationError(msg)
+
+        ideal, nadir = get_corrected_ideal_and_nadir(problem)
+
+        # calculate the weights
+        weights = {
+            obj.symbol: 1 / (nadir[obj.symbol] - (ideal[obj.symbol] - delta))
+            for obj in problem.objectives
+        }
+
+        # form the constaint and augmentation expressions
+        # constraint expressions are formed into a list of lists
+        corrected_rp = get_corrected_reference_point(problem, reference_point)
+        for obj in problem.objectives:
+            expr = f"(({weights[obj.symbol]}) * ({obj.symbol}_min - {corrected_rp[obj.symbol]})) - _alpha"
+            constraints.append(
+                Constraint(
+                    name=f"Constraint for {obj.symbol}",
+                    symbol=f"{obj.symbol}_con_{i+1}",
+                    func=expr,
+                    cons_type=ConstraintTypeEnum.LTE,
+                    is_linear=obj.is_linear,
+                    is_convex=obj.is_convex,
+                    is_twice_differentiable=obj.is_twice_differentiable,
+                )
+            )
+
+        aug_exprs = []
+        aug_exprs.append(" + ".join([f"({weights[obj.symbol]} * {obj.symbol}_min)" for obj in problem.objectives]))
+
+    aug_exprs = " + ".join(aug_exprs)
+    func = f"_alpha + {rho} * ({aug_exprs})"
+
+    scalarization_function = ScalarizationFunction(
+        name="Differentiable achievement scalarizing function for multiple decision makers",
+        symbol=symbol,
+        func=func,
+        is_convex=problem.is_convex,
+        is_linear=problem.is_linear,
+        is_twice_differentiable=problem.is_twice_differentiable,
+    )
+
+
+    # loop to create a constraint for every objective of every reference point given
+    """for i in range(len(reference_points)):
+        for obj in problem.objectives:
+            # since we are subtracting a constant value, the linearity, convexity,
+            # and differentiability of the objective function, and hence the
+            # constraint, should not change.
+            constraints.append(
+                Constraint(
+                    name=f"Constraint for {obj.symbol}",
+                    symbol=f"{obj.symbol}_con_{i+1}",
+                    func=con_terms[i][obj.symbol],
+                    cons_type=ConstraintTypeEnum.LTE,
+                    is_linear=obj.is_linear,
+                    is_convex=obj.is_convex,
+                    is_twice_differentiable=obj.is_twice_differentiable,
+                )
+            )"""
+    _problem = problem.add_variables([alpha])
+    _problem = _problem.add_scalarization(scalarization_function)
+    return _problem.add_constraints(constraints), symbol
+
+
 def add_asf_generic_diff(
     problem: Problem,
     symbol: str,
@@ -2601,3 +2714,22 @@ def add_lte_constraints(
             ]
         }
     )
+
+
+if __name__ == "__main__":
+    from desdeo.problem import forest_problem
+    from desdeo.tools import GurobipySolver, PyomoIpoptSolver
+
+    problems = [forest_problem(holding=1), forest_problem(holding=2), forest_problem(holding=6)]
+    reference_points = [
+        {"f_1": 40000, "f_2": 2000, "f_3": 10000},
+        {"f_1": 30000, "f_2": 1000, "f_3": 30000},
+        {"f_1": 20000, "f_2": 3000, "f_3": 30000},
+    ]
+
+    problem_group_asf, group_asf = add_group_asf_utopia(problems, "group_asf", reference_points)
+
+    solver = GurobipySolver(problem_group_asf)
+    res = solver.solve(group_asf)
+    print(res.constraint_values)
+    print(res.optimal_objectives)
