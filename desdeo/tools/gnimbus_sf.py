@@ -1,3 +1,11 @@
+"""Aggregation of change vectors for GNIMBUS.
+
+Change vectors are encoded as vectors of integer numbers between 0 and 2:
+
+    0: objective can be worsened
+    1: objective can stay the same
+    2: objective can be improved.
+"""
 
 import math
 
@@ -17,6 +25,8 @@ def decode(x: int | np.ndarray, n_obj: int) -> np.ndarray:
     Returns:
         np.ndarray: change vector representation as numpy array
     """
+    # find a change vector from its number
+    # note that numbers are 1 plus the base 3 coding
     x_new = x - 1
     if not isinstance(x, np.ndarray):
         x_new = np.atleast_1d(x) - 1
@@ -69,8 +79,6 @@ def test_dom(n_obj: int) -> np.ndarray:
     )
     if ret.ndim == 1:
         ret = np.reshape(ret, (size, size))
-        np.fill_diagonal(ret, False)
-        return ret
     np.fill_diagonal(ret, False)
     return ret
 
@@ -93,6 +101,11 @@ def work_swap(
     Returns:
         bool | list[bool]: swap relations
     """
+    # comparing two change vectors a and b
+    # we look for pairs of objectives i and j that fulfill the conditions that
+    # 1) a[i] and a[j] are the same as in the reference vector
+    # 2) b[i] and b[j] are swapped from a
+    # 3) all other elements are the same between a and b (that is the most tricky part)
     if isinstance(i, int) and isinstance(j, int):
         cond1 = np.logical_and(a[i] == ref[i], (a[i] == b[j]))
         cond2 = np.logical_and(a[j] == ref[j], (a[j] == b[i]))
@@ -165,7 +178,9 @@ def test_k_ratio(kr: float, n_obj: int) -> np.ndarray:
     Returns:
         np.ndarray: k-ratio relations
     """
+    # all change vectors (acv)
     acv = decode(np.arange(1, 3 ** n_obj + 1), n_obj)
+    # number of improved objectives
     n_imp = np.sum(acv == 2, axis=1)
     # the following acts as the outer function from R (perform an operation "/" for each element of an array)
     rel = n_imp[:, None] / n_imp
@@ -184,7 +199,7 @@ def make_ranks(rel: np.ndarray) -> np.ndarray:
         GNIMBUSError: if while loop infinite
 
     Returns:
-        np.ndarray: array of ranks
+        np.ndarray: array of ranks, higher ranks imply better alternatives
     """
     # Ensure the matrix is square
     if rel.shape[0] != rel.shape[1]:
@@ -264,12 +279,14 @@ def main(refs: np.ndarray, kr: float | None = None, print_intermediate: bool | N
     if np.any(np.sum(refs == 2, axis=1) == 0):
         raise ValueError("Each member must specify at least one objective to improve")
 
+    # dominance relation
     rel = test_dom(n_obj)
 
     if print_intermediate:
         print("Dominance relation")
         print(rel)
 
+    # possible add ratio
     if kr is not None:
         h = test_k_ratio(kr, n_obj)
         rel = np.logical_or(rel, h)
@@ -285,10 +302,12 @@ def main(refs: np.ndarray, kr: float | None = None, print_intermediate: bool | N
             print(f"Specific relation for member {i}")
         ranks = np.column_stack((ranks, make_ranks(r1) if ranks is not None else make_ranks(r1)))
 
+    # all infeasible vectors (no decrease) receive rank -1
     acv = decode(np.arange(1, 3 ** n_obj + 1), n_obj)
     infeas = np.sum(acv == 0, axis=1) == 0
     ranks[infeas, :] = -1
 
+    # find maxmin rank
     minrank = np.min(ranks, axis=1)
     compromise = np.where(minrank == np.max(minrank))[0]
     compromise = nd_compromise(compromise, ranks)
@@ -298,3 +317,9 @@ def main(refs: np.ndarray, kr: float | None = None, print_intermediate: bool | N
         "compromise": decode(compromise + 1, n_obj),
         "cranks": ranks[compromise, :]
     }
+
+if __name__ == "__main__":
+    # Example Usage
+    example = np.array([[2, 0, 1, 2], [1, 0, 2, 1], [2, 1, 0, 1]])
+    result = main(example)
+    print(result)
