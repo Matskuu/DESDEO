@@ -88,22 +88,22 @@ def get_real_estate_polygon(realestateid: str, api_key: str):
     return coordinates, features
 
 
-def write_real_estate_xml(coordinates: list, realestateid: str):
-    if len(coordinates) == 1:
-        geometry = coordinates[0]
+def write_real_estate_xml(coordinates: list, realestateid: str) -> tuple[list[str], list]:
+    error_messages = []
+    coordinates_copy = coordinates.copy()
+    number = 1
+    for i in range(len(coordinates)):
+        geometry = coordinates[i]
         polygon = coord_to_polygon(geometry)
         req = requests.post("https://avoin.metsakeskus.fi/rest/mvrest/FRStandData/v1/ByPolygon", data={"wktPolygon": polygon, "stdVersion": "MV1.9"})
         xml = req.content
-        with Path.open(f"{realestateid}/output.xml", "wb") as file:
+        if "MV-kuvioita ei löytynyt." in xml.decode():
+            error_messages.append(f"No forest found for a polygon from estate {realestateid}.")
+            coordinates_copy.pop(i)
+            continue
+        with Path.open(f"{realestateid}/output_{number}.xml", "wb") as file:
             file.write(xml)
-    else:
-        for i in range(len(coordinates)):
-            with Path.open(f"{realestateid}/output_{i+1}.xml", "wb") as file:
-                geometry = coordinates[i]
-                polygon = coord_to_polygon(geometry)
-                req = requests.post("https://avoin.metsakeskus.fi/rest/mvrest/FRStandData/v1/ByPolygon", data={"wktPolygon": polygon, "stdVersion": "MV1.9"})
-                xml = req.content
-                file.write(xml)
+        number = number + 1
     """if len(coordinates) == 1:
         geometry = coordinates[0]
         polygon = coord_to_polygon(geometry)
@@ -112,23 +112,20 @@ def write_real_estate_xml(coordinates: list, realestateid: str):
         with Path.open(f"{realestateid}/output.xml", "wb") as file:
             file.write(xml)
     else:
-        with Path.open(f"{realestateid}/output.xml", "wb") as file:
-            geometry = coordinates[0]
+        number = 1
+        for i in range(len(coordinates)):
+            geometry = coordinates[i]
             polygon = coord_to_polygon(geometry)
-            req = requests.post("https://avoin.metsakeskus.fi/rest/mvrest/FRStandData/v1/ByPolygon", data={"wktPolygon": geometry, "stdVersion": "MV1.9"})
+            req = requests.post("https://avoin.metsakeskus.fi/rest/mvrest/FRStandData/v1/ByPolygon", data={"wktPolygon": polygon, "stdVersion": "MV1.9"})
             xml = req.content
-            file.write(b"\n".join(xml.splitlines()[:-2]) + b"\n")
-            for i in range(1, len(coordinates)-1):
-                geometry = coordinates[i]
-                polygon = coord_to_polygon(geometry)
-                req = requests.post("https://avoin.metsakeskus.fi/rest/mvrest/FRStandData/v1/ByPolygon", data={"wktPolygon": geometry, "stdVersion": "MV1.9"})
-                xml = req.content
-                file.write(b"\n".join(xml.splitlines()[2:-2]) + b"\n")
-            geometry = coordinates[len(coordinates)-1]
-            polygon = coord_to_polygon(geometry)
-            req = requests.post("https://avoin.metsakeskus.fi/rest/mvrest/FRStandData/v1/ByPolygon", data={"wktPolygon": geometry, "stdVersion": "MV1.9"})
-            xml = req.content
-            file.write(b"\n".join(xml.splitlines()[2:]))"""
+            if "MV-kuvioita ei löytynyt." in xml.decode():
+                error_messages.append(f"No forest found for a polygon from estate {realestateid}.")
+                coordinates_copy.pop(i)
+                continue
+            with Path.open(f"{realestateid}/output_{number}.xml", "wb") as file:
+                file.write(xml)
+            number = number + 1"""
+    return error_messages, coordinates_copy
 
 
 def get_polygon_dict(root: ET.ElementTree):
@@ -151,7 +148,66 @@ def get_polygon_dict(root: ET.ElementTree):
 
 
 def get_ids_to_remove(coordinates: list, realestateid: str, plot: bool = False) -> list[str]:
-    if len(coordinates) == 1:
+    for i in range(len(coordinates)):
+        tree = ET.parse(f"{realestateid}/output_{i+1}.xml")
+        root = tree.getroot()
+
+
+        target = geom.Polygon(coordinates[i]) # when multiple holdings, go through this in a loop?
+
+        buffer_distance = 10
+        #buffer = target.buffer(buffer_distance)
+
+        orig_polygons = get_polygon_dict(root)
+
+        polygons = [(p, geom.Polygon(orig_polygons[p])) for p in orig_polygons]  # List of original polygons
+        gdf_polygons = gpd.GeoDataFrame({"stand_id": [p[0] for p in polygons], "geometry": [p[1] for p in polygons]})
+
+        # Create a GeoDataFrame for the target (holding) polygon
+        gdf_target = gpd.GeoDataFrame(geometry=[target])
+
+        # Buffer the target polygon
+        buffer = gdf_target.buffer(buffer_distance).iloc[0]  # Create buffer of target
+
+        removed = [] # for plotting purposes
+        removed_ids = []
+        # Remove any neighboring stands from the buffer
+        for index, stand in gdf_polygons.iterrows():
+            if not buffer.contains(stand.geometry):
+                removed.append(stand) # for plotting purposes
+                removed_ids.append(stand.stand_id)
+                gdf_polygons = gdf_polygons.drop(index)
+
+        for child in root:
+            if child.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stands":
+                to_remove = []
+                for stand in child:
+                    if stand.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stand" and stand.attrib["id"] in removed_ids:
+                        to_remove.append(stand)
+                for r in to_remove:
+                    child.remove(r)
+
+        tree.write(f"{realestateid}/output_{i+1}.xml")
+
+        if plot:
+            # Plot the remaining polygons and the buffer
+            _, ax = plt.subplots()
+
+            gdf_target.plot(ax=ax, color="red", alpha=0.2)
+
+            # Plot the original polygons (before removal) in green
+            gdf_polygons.plot(ax=ax, color="green", alpha=0.5,edgecolor="black")
+
+            # Plot the buffer area in blue
+            gpd.GeoSeries([buffer]).plot(ax=ax, color="blue", alpha=0.3)
+
+            for r in removed:
+                x, y = r.geometry.exterior.xy
+                ax.fill(x, y, alpha=0.5, fc="black")
+
+            ax.set_title('Polygons with Buffer (Removed Neighbors)')
+            plt.savefig(f"{realestateid}/stands_{i+1}.png")
+    """if len(coordinates) == 1:
         tree = ET.parse(f"{realestateid}/output.xml")
         root = tree.getroot()
 
@@ -271,7 +327,7 @@ def get_ids_to_remove(coordinates: list, realestateid: str, plot: bool = False) 
                     ax.fill(x, y, alpha=0.5, fc="black")
 
                 ax.set_title('Polygons with Buffer (Removed Neighbors)')
-                plt.savefig(f"{realestateid}/stands_{i+1}.png")
+                plt.savefig(f"{realestateid}/stands_{i+1}.png")"""
     return removed_ids
 
 
@@ -315,18 +371,23 @@ def write_carbon_json(realestateid: str):
 
 
 def combine_xmls(realestateid: str, coordinates: list):
-    with Path.open(f"{realestateid}/output.xml", "w") as file:
-        with Path.open(f"{realestateid}/output_1.xml", "r") as file2:
-            content = file2.read()
-        file.write("\n".join(content.splitlines()[:-2]) + "\n")
-        for i in range(1, len(coordinates)-1):
-            with Path.open(f"{realestateid}/output_{i+1}.xml", "r") as file2:
+    if len(coordinates) != 1:
+        with Path.open(f"{realestateid}/output.xml", "w") as file:
+            with Path.open(f"{realestateid}/output_1.xml", "r") as file2:
                 content = file2.read()
-            file.write("\n".join(content.splitlines()[2:-2]) + "\n")
-        with Path.open(f"{realestateid}/output_{len(coordinates)}.xml", "r") as file2:
-            content = file2.read()
-        file.write("\n".join(content.splitlines()[2:]))
-
+            file.write("\n".join(content.splitlines()[:-2]) + "\n")
+            for i in range(1, len(coordinates)-1):
+                with Path.open(f"{realestateid}/output_{i+1}.xml", "r") as file2:
+                    content = file2.read()
+                file.write("\n".join(content.splitlines()[2:-2]) + "\n")
+            with Path.open(f"{realestateid}/output_{len(coordinates)}.xml", "r") as file2:
+                content = file2.read()
+            file.write("\n".join(content.splitlines()[2:]))
+    else:
+        with Path.open(f"{realestateid}/output.xml", "w") as file:
+            with Path.open(f"{realestateid}/output_1.xml", "r") as file2:
+                content = file2.read()
+            file.write(content)
 
 
 if __name__ == "__main__":
@@ -351,22 +412,25 @@ if __name__ == "__main__":
     for i in range(len(ids)):
         holding = i + 1
         realestateid = ids[i]
-        realestateid_mml = parse_real_estate_id(ids[i])
+        """realestateid_mml = parse_real_estate_id(ids[i])
 
         if not Path(f"{realestateid}").is_dir():
             Path(f"{realestateid}").mkdir()
 
         coordinates, estate_data = get_real_estate_polygon(realestateid_mml, api_key)
 
-        write_real_estate_xml(coordinates, realestateid)
+        errors, coordinates = write_real_estate_xml(coordinates, realestateid)
+        if len(errors) > 0:
+            for error in errors:
+                print(error)
 
         _ = get_ids_to_remove(coordinates, realestateid, plot=True)
 
-        if len(coordinates) != 1:
-            combine_xmls(realestateid, coordinates)
+        combine_xmls(realestateid, coordinates)"""
+        print(len([node for _, node in ET.iterparse(f"{realestateid}/output_2.xml", events=["start-ns"])]))
 
         # convert the updated xml into a multiobjective optimization problem
-        run_metsi(realestateid)
+        """run_metsi(realestateid)
         convert_sim_output_to_csv(realestateid)
         write_trees_json(realestateid)
         write_carbon_json(realestateid)
@@ -402,7 +466,7 @@ if __name__ == "__main__":
                         features.append(feature)
     map_data["features"] = features
     with Path.open(f"{name}/{name}.json", "w") as file:
-        json.dump(map_data, file)
+        json.dump(map_data, file)"""
 
     """tree = ET.parse(f"{realestateid}/output.xml")
     root = tree.getroot()
