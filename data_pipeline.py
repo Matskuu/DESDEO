@@ -1,27 +1,37 @@
-import shutil
-import urllib.parse
-import urllib.request
+
 from pathlib import Path
 
 import argparse
-import ast
-import fiona
-import io
 import json
 import requests
 import subprocess
 import sys
-import zipfile
 import matplotlib.pyplot as plt
 import geopandas as gpd
 import shapely.geometry as geom
-import shapely.wkt as wkt
 
 from xml.etree import ElementTree as ET
 
 
-class PipelineError(Exception):
-    """."""
+NS = {
+        "schema_location": "http://standardit.tapio.fi/schemas/forestData ForestData.xsd",
+        "xsi": "http://www.w3.org/2001/XMLSchema-instance",
+        "xlink": "http://www.w3.org/1999/xlink",
+        "gml": "http://www.opengis.net/gml",
+        "gdt": "http://standardit.tapio.fi/schemas/forestData/common/geometricDataTypes",
+        "co": "http://standardit.tapio.fi/schemas/forestData/common",
+        "sf": "http://standardit.tapio.fi/schemas/forestData/specialFeature",
+        "op": "http://standardit.tapio.fi/schemas/forestData/operation",
+        "dts": "http://standardit.tapio.fi/schemas/forestData/deadTreeStrata",
+        "tss": "http://standardit.tapio.fi/schemas/forestData/treeStandSummary",
+        "tst": "http://standardit.tapio.fi/schemas/forestData/treeStratum",
+        "ts": "http://standardit.tapio.fi/schemas/forestData/treeStand",
+        "st": "http://standardit.tapio.fi/schemas/forestData/Stand",
+        "ci": "http://standardit.tapio.fi/schemas/forestData/contactInformation",
+        "re": "http://standardit.tapio.fi/schemas/forestData/realEstate",
+        "default": "http://standardit.tapio.fi/schemas/forestData"
+    }
+
 
 def parse_real_estate_id(original_id: str) -> str:
     realestateid = original_id
@@ -104,27 +114,6 @@ def write_real_estate_xml(coordinates: list, realestateid: str) -> tuple[list[st
         with Path.open(f"{realestateid}/output_{number}.xml", "wb") as file:
             file.write(xml)
         number = number + 1
-    """if len(coordinates) == 1:
-        geometry = coordinates[0]
-        polygon = coord_to_polygon(geometry)
-        req = requests.post("https://avoin.metsakeskus.fi/rest/mvrest/FRStandData/v1/ByPolygon", data={"wktPolygon": polygon, "stdVersion": "MV1.9"})
-        xml = req.content
-        with Path.open(f"{realestateid}/output.xml", "wb") as file:
-            file.write(xml)
-    else:
-        number = 1
-        for i in range(len(coordinates)):
-            geometry = coordinates[i]
-            polygon = coord_to_polygon(geometry)
-            req = requests.post("https://avoin.metsakeskus.fi/rest/mvrest/FRStandData/v1/ByPolygon", data={"wktPolygon": polygon, "stdVersion": "MV1.9"})
-            xml = req.content
-            if "MV-kuvioita ei löytynyt." in xml.decode():
-                error_messages.append(f"No forest found for a polygon from estate {realestateid}.")
-                coordinates_copy.pop(i)
-                continue
-            with Path.open(f"{realestateid}/output_{number}.xml", "wb") as file:
-                file.write(xml)
-            number = number + 1"""
     return error_messages, coordinates_copy
 
 
@@ -136,8 +125,8 @@ def get_polygon_dict(root: ET.ElementTree):
             for stand in child:
                 if stand.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stand":
                     stand_id = stand.attrib["id"]
-                    for s in stand.iter("{http://www.opengis.net/gml}LinearRing"):
-                        if s.tag == "{http://www.opengis.net/gml}LinearRing":
+                    for e in stand.iter("{http://www.opengis.net/gml}exterior"):
+                        for s in e.iter("{http://www.opengis.net/gml}LinearRing"):
                             for i in s:
                                 coords = i.text.split(" ")
                                 coordinate_pairs = []
@@ -151,7 +140,6 @@ def get_ids_to_remove(coordinates: list, realestateid: str, plot: bool = False) 
     for i in range(len(coordinates)):
         tree = ET.parse(f"{realestateid}/output_{i+1}.xml")
         root = tree.getroot()
-
 
         target = geom.Polygon(coordinates[i]) # when multiple holdings, go through this in a loop?
 
@@ -187,6 +175,46 @@ def get_ids_to_remove(coordinates: list, realestateid: str, plot: bool = False) 
                 for r in to_remove:
                     child.remove(r)
 
+        def fix_prefixes(element, namespaces):
+            # Add the namespace to each element if needed
+            for child in element:
+                fix_prefixes(child, namespaces)
+
+            if element.tag.startswith("{"):
+                # Extract the namespace part from the tag
+                namespace = element.tag.split("}")[0][1:]
+                prefix = ""
+                for key, value in namespaces.items():
+                    if namespace == value:
+                        prefix = key
+                element.tag = f"{prefix}:{element.tag.split('}')[1]}"
+
+        # Use namespaces manually as required
+        namespaces = NS
+        fix_prefixes(root, namespaces)
+
+        new_xml = ET.tostring(root).decode()
+
+        namespaces = ""
+        for key, value in NS.items():
+            if value == "http://standardit.tapio.fi/schemas/forestData ForestData.xsd":
+                namespaces = namespaces + f'xsi:{key}="{value}"' + " "
+            elif key == "default":
+                namespaces = namespaces + f'xmlns="{value}"' + " "
+            else:
+                namespaces = namespaces + f'xmlns:{key}="{value}"' + " "
+
+        namespaces = namespaces + 'schemaPackageVersion="V20" schemaPackageSubversion="V20.01"'
+
+        first_row = "<ForestPropertyData " + namespaces + ">"
+
+        new_xml_list = new_xml.split("\n")
+        new_xml_list[0] = first_row
+        new_xml_list[-1] = "</ForestPropertyData>"
+        new_xml = "\n".join(new_xml_list)
+        with Path.open(f"{realestateid}/output_{i+1}.xml", "w") as file:
+            file.write(new_xml)
+
         tree.write(f"{realestateid}/output_{i+1}.xml")
 
         if plot:
@@ -207,142 +235,10 @@ def get_ids_to_remove(coordinates: list, realestateid: str, plot: bool = False) 
 
             ax.set_title('Polygons with Buffer (Removed Neighbors)')
             plt.savefig(f"{realestateid}/stands_{i+1}.png")
-    """if len(coordinates) == 1:
-        tree = ET.parse(f"{realestateid}/output.xml")
-        root = tree.getroot()
-
-        target = geom.Polygon(coordinates[0]) # when multiple holdings, go through this in a loop?
-
-        buffer_distance = 10
-        #buffer = target.buffer(buffer_distance)
-
-        orig_polygons = orig_polygons = get_polygon_dict(root)
-
-        polygons = [(p, geom.Polygon(orig_polygons[p])) for p in orig_polygons]  # List of original polygons
-        gdf_polygons = gpd.GeoDataFrame({"stand_id": [p[0] for p in polygons], "geometry": [p[1] for p in polygons]})
-
-        # Create a GeoDataFrame for the target (holding) polygon
-        gdf_target = gpd.GeoDataFrame(geometry=[target])
-
-        # Buffer the target polygon
-        buffer = gdf_target.buffer(buffer_distance).iloc[0]  # Create buffer of target
-
-        removed = [] # for plotting purposes
-        removed_ids = []
-        # Remove any neighboring stands from the buffer
-        for index, stand in gdf_polygons.iterrows():
-            if not buffer.contains(stand.geometry):
-                removed.append(stand) # for plotting purposes
-                removed_ids.append(stand.stand_id)
-                gdf_polygons = gdf_polygons.drop(index)
-
-        for child in root:
-            if child.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stands":
-                to_remove = []
-                for stand in child:
-                    if stand.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stand" and stand.attrib["id"] in removed_ids:
-                        to_remove.append(stand)
-                for r in to_remove:
-                    child.remove(r)
-
-        tree.write(f"{realestateid}/output.xml")
-
-        #print(gdf_polygons.count())
-
-        if plot:
-            # Plot the remaining polygons and the buffer
-            _, ax = plt.subplots()
-
-            gdf_target.plot(ax=ax, color="red", alpha=0.2)
-
-            # Plot the original polygons (before removal) in green
-            gdf_polygons.plot(ax=ax, color="green", alpha=0.5,edgecolor="black")
-
-            # Plot the buffer area in blue
-            gpd.GeoSeries([buffer]).plot(ax=ax, color="blue", alpha=0.3)
-
-            for r in removed:
-                x, y = r.geometry.exterior.xy
-                ax.fill(x, y, alpha=0.5, fc="black")
-
-            ax.set_title('Polygons with Buffer (Removed Neighbors)')
-            plt.savefig(f"{realestateid}/stands.png")
-
-    else:
-        for i in range(len(coordinates)):
-            tree = ET.parse(f"{realestateid}/output_{i+1}.xml")
-            root = tree.getroot()
-
-
-            target = geom.Polygon(coordinates[i]) # when multiple holdings, go through this in a loop?
-
-            buffer_distance = 10
-            #buffer = target.buffer(buffer_distance)
-
-            orig_polygons = get_polygon_dict(root)
-
-            polygons = [(p, geom.Polygon(orig_polygons[p])) for p in orig_polygons]  # List of original polygons
-            gdf_polygons = gpd.GeoDataFrame({"stand_id": [p[0] for p in polygons], "geometry": [p[1] for p in polygons]})
-
-            # Create a GeoDataFrame for the target (holding) polygon
-            gdf_target = gpd.GeoDataFrame(geometry=[target])
-
-            # Buffer the target polygon
-            buffer = gdf_target.buffer(buffer_distance).iloc[0]  # Create buffer of target
-
-            removed = [] # for plotting purposes
-            removed_ids = []
-            # Remove any neighboring stands from the buffer
-            for index, stand in gdf_polygons.iterrows():
-                if not buffer.contains(stand.geometry):
-                    removed.append(stand) # for plotting purposes
-                    removed_ids.append(stand.stand_id)
-                    gdf_polygons = gdf_polygons.drop(index)
-
-            for child in root:
-                if child.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stands":
-                    to_remove = []
-                    for stand in child:
-                        if stand.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stand" and stand.attrib["id"] in removed_ids:
-                            to_remove.append(stand)
-                    for r in to_remove:
-                        child.remove(r)
-
-            tree.write(f"{realestateid}/output_{i+1}.xml")
-
-            if plot:
-                # Plot the remaining polygons and the buffer
-                _, ax = plt.subplots()
-
-                gdf_target.plot(ax=ax, color="red", alpha=0.2)
-
-                # Plot the original polygons (before removal) in green
-                gdf_polygons.plot(ax=ax, color="green", alpha=0.5,edgecolor="black")
-
-                # Plot the buffer area in blue
-                gpd.GeoSeries([buffer]).plot(ax=ax, color="blue", alpha=0.3)
-
-                for r in removed:
-                    x, y = r.geometry.exterior.xy
-                    ax.fill(x, y, alpha=0.5, fc="black")
-
-                ax.set_title('Polygons with Buffer (Removed Neighbors)')
-                plt.savefig(f"{realestateid}/stands_{i+1}.png")"""
     return removed_ids
 
 
-def write_updated_xml(tree: ET.ElementTree, realestateid: str, removed_ids: list[str]):
-    root = tree.getroot()
-    # remove the stands outside the real estate's polygon
-    for child in root:
-        if child.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stands":
-            for stand in child:
-                if stand.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stand" and stand.attrib["id"] in removed_ids:
-                    child.remove(stand)
-    tree.write(f"{realestateid}/output.xml")
-
-
-def run_metsi(realestate_id: str): # make it a directory?
+def run_metsi(realestateid: str): # make it a directory?
     # Run the metsi simulator with the data in the XML file
     # Requires that the following are found in the current repository:
     #   1. data directory from metsi (that has information about prices etc.)
@@ -412,7 +308,7 @@ if __name__ == "__main__":
     for i in range(len(ids)):
         holding = i + 1
         realestateid = ids[i]
-        """realestateid_mml = parse_real_estate_id(ids[i])
+        realestateid_mml = parse_real_estate_id(ids[i])
 
         if not Path(f"{realestateid}").is_dir():
             Path(f"{realestateid}").mkdir()
@@ -426,11 +322,10 @@ if __name__ == "__main__":
 
         _ = get_ids_to_remove(coordinates, realestateid, plot=True)
 
-        combine_xmls(realestateid, coordinates)"""
-        print(len([node for _, node in ET.iterparse(f"{realestateid}/output_2.xml", events=["start-ns"])]))
+        combine_xmls(realestateid, coordinates)
 
-        # convert the updated xml into a multiobjective optimization problem
-        """run_metsi(realestateid)
+        """# convert the updated xml into a multiobjective optimization problem
+        run_metsi(realestateid)
         convert_sim_output_to_csv(realestateid)
         write_trees_json(realestateid)
         write_carbon_json(realestateid)
@@ -467,14 +362,3 @@ if __name__ == "__main__":
     map_data["features"] = features
     with Path.open(f"{name}/{name}.json", "w") as file:
         json.dump(map_data, file)"""
-
-    """tree = ET.parse(f"{realestateid}/output.xml")
-    root = tree.getroot()
-
-    orig_polygons = get_polygon_dict(root)
-    #print(orig_polygons)
-
-    removed_ids = get_ids_to_remove(coordinates, orig_polygons, realestateid, plot=True)
-    #print(removed_ids)
-
-    write_updated_xml(tree, realestateid, removed_ids)"""
