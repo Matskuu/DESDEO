@@ -98,7 +98,7 @@ def get_real_estate_polygon(realestateid: str, api_key: str):
     return coordinates, features
 
 
-def write_real_estate_xml(coordinates: list, realestateid: str) -> tuple[list[str], list]:
+def write_real_estate_xml(coordinates: list, realestateid: str, realestate_dir: str) -> tuple[list[str], list]:
     error_messages = []
     coordinates_copy = coordinates.copy()
     number = 1
@@ -111,7 +111,7 @@ def write_real_estate_xml(coordinates: list, realestateid: str) -> tuple[list[st
             error_messages.append(f"No forest found for a polygon from estate {realestateid}.")
             coordinates_copy.pop(i)
             continue
-        with Path.open(f"{realestateid}/output_{number}.xml", "wb") as file:
+        with Path.open(f"{realestate_dir}/output_{number}.xml", "wb") as file:
             file.write(xml)
         number = number + 1
     return error_messages, coordinates_copy
@@ -125,6 +125,7 @@ def get_polygon_dict(root: ET.ElementTree):
             for stand in child:
                 if stand.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stand":
                     stand_id = stand.attrib["id"]
+                    exterior_and_interior = {}
                     for e in stand.iter("{http://www.opengis.net/gml}exterior"):
                         for s in e.iter("{http://www.opengis.net/gml}LinearRing"):
                             for i in s:
@@ -132,13 +133,22 @@ def get_polygon_dict(root: ET.ElementTree):
                                 coordinate_pairs = []
                                 for coordinate in coords:
                                     coordinate_pairs.append((float(coordinate.split(",")[0]), float(coordinate.split(",")[1])))
-                    orig_polygons[stand_id] = coordinate_pairs
+                    exterior_and_interior["exterior"] = coordinate_pairs
+                    coordinate_pairs = []
+                    for e in stand.iter("{http://www.opengis.net/gml}interior"):
+                        for s in e.iter("{http://www.opengis.net/gml}LinearRing"):
+                            for i in s:
+                                coords = i.text.split(" ")
+                                for coordinate in coords:
+                                    coordinate_pairs.append((float(coordinate.split(",")[0]), float(coordinate.split(",")[1])))
+                    exterior_and_interior["interior"] = coordinate_pairs
+                    orig_polygons[stand_id] = exterior_and_interior
     return orig_polygons
 
 
-def get_ids_to_remove(coordinates: list, realestateid: str, plot: bool = False) -> list[str]:
+def get_ids_to_remove(coordinates: list, realestate_dir: str, plot: bool = False) -> list[str]:
     for i in range(len(coordinates)):
-        tree = ET.parse(f"{realestateid}/output_{i+1}.xml")
+        tree = ET.parse(f"{realestate_dir}/output_{i+1}.xml")
         root = tree.getroot()
 
         target = geom.Polygon(coordinates[i]) # when multiple holdings, go through this in a loop?
@@ -148,7 +158,13 @@ def get_ids_to_remove(coordinates: list, realestateid: str, plot: bool = False) 
 
         orig_polygons = get_polygon_dict(root)
 
-        polygons = [(p, geom.Polygon(orig_polygons[p])) for p in orig_polygons]  # List of original polygons
+        polygons = []
+        for key, value in orig_polygons.items():
+            if len(value["interior"]) > 0:
+                polygons.append((key, geom.Polygon(value["exterior"], holes=[value["interior"]])))
+            else:
+                polygons.append((key, geom.Polygon(value["exterior"])))
+
         gdf_polygons = gpd.GeoDataFrame({"stand_id": [p[0] for p in polygons], "geometry": [p[1] for p in polygons]})
 
         # Create a GeoDataFrame for the target (holding) polygon
@@ -212,10 +228,8 @@ def get_ids_to_remove(coordinates: list, realestateid: str, plot: bool = False) 
         new_xml_list[0] = first_row
         new_xml_list[-1] = "</ForestPropertyData>"
         new_xml = "\n".join(new_xml_list)
-        with Path.open(f"{realestateid}/output_{i+1}.xml", "w") as file:
+        with Path.open(f"{realestate_dir}/output_{i+1}.xml", "w") as file:
             file.write(new_xml)
-
-        tree.write(f"{realestateid}/output_{i+1}.xml")
 
         if plot:
             # Plot the remaining polygons and the buffer
@@ -223,7 +237,6 @@ def get_ids_to_remove(coordinates: list, realestateid: str, plot: bool = False) 
 
             gdf_target.plot(ax=ax, color="red", alpha=0.2)
 
-            # Plot the original polygons (before removal) in green
             gdf_polygons.plot(ax=ax, color="green", alpha=0.5,edgecolor="black")
 
             # Plot the buffer area in blue
@@ -234,54 +247,55 @@ def get_ids_to_remove(coordinates: list, realestateid: str, plot: bool = False) 
                 ax.fill(x, y, alpha=0.5, fc="black")
 
             ax.set_title('Polygons with Buffer (Removed Neighbors)')
-            plt.savefig(f"{realestateid}/stands_{i+1}.png")
+            plt.savefig(f"{realestate_dir}/stands_{i+1}.png")
     return removed_ids
 
 
-def run_metsi(realestateid: str): # make it a directory?
+def run_metsi(realestate_dir: str): # make it a directory?
     # Run the metsi simulator with the data in the XML file
     # Requires that the following are found in the current repository:
     #   1. data directory from metsi (that has information about prices etc.)
     #   2. a control.yaml file that has the parameters for the metsi simulation
 
     # TODO: change to original xml, no need for copies if everything works like it should
-    subprocess.run(f"metsi ./{realestateid}/output.xml ./{realestateid}")
+    res = subprocess.run(f"metsi {realestate_dir}/output.xml {realestate_dir}", capture_output=True)
+    print(res.stderr.decode())
 
 
-def convert_sim_output_to_csv(realestateid: str): # make it a directory?
+def convert_sim_output_to_csv(realestate_dir: str): # make it a directory?
     # run the R script to convert the simulation output to csv for optimization purposes
-    res = subprocess.run(f"Rscript ./convert2opt.R ./{realestateid}", capture_output=True)
+    res = subprocess.run(f"Rscript ./convert2opt.R {realestate_dir}", capture_output=True)
     print(res)
 
 
-def write_trees_json(realestateid: str):
+def write_trees_json(realestate_dir: str):
     # run a python script to convert trees.txt into a more usable format
-    res = subprocess.run(f"python desdeo/utopia_stuff/write_trees_json.py -d ./{realestateid}", capture_output=True)
+    res = subprocess.run(f"python desdeo/utopia_stuff/write_trees_json.py -d {realestate_dir}", capture_output=True)
     print(res)
 
 
-def write_carbon_json(realestateid: str):
+def write_carbon_json(realestate_dir: str):
     # compute CO2 and write them into a json file to be used to form an optimization problem
-    res = subprocess.run(f"python desdeo/utopia_stuff/write_carbon_json.py -d ./{realestateid}", capture_output=True)
+    res = subprocess.run(f"python desdeo/utopia_stuff/write_carbon_json.py -d {realestate_dir}", capture_output=True)
     print(res)
 
 
-def combine_xmls(realestateid: str, coordinates: list):
+def combine_xmls(realestate_dir: str, coordinates: list):
     if len(coordinates) != 1:
-        with Path.open(f"{realestateid}/output.xml", "w") as file:
-            with Path.open(f"{realestateid}/output_1.xml", "r") as file2:
+        with Path.open(f"{realestate_dir}/output.xml", "w") as file:
+            with Path.open(f"{realestate_dir}/output_1.xml", "r") as file2:
                 content = file2.read()
             file.write("\n".join(content.splitlines()[:-2]) + "\n")
             for i in range(1, len(coordinates)-1):
-                with Path.open(f"{realestateid}/output_{i+1}.xml", "r") as file2:
+                with Path.open(f"{realestate_dir}/output_{i+1}.xml", "r") as file2:
                     content = file2.read()
                 file.write("\n".join(content.splitlines()[2:-2]) + "\n")
-            with Path.open(f"{realestateid}/output_{len(coordinates)}.xml", "r") as file2:
+            with Path.open(f"{realestate_dir}/output_{len(coordinates)}.xml", "r") as file2:
                 content = file2.read()
             file.write("\n".join(content.splitlines()[2:]))
     else:
-        with Path.open(f"{realestateid}/output.xml", "w") as file:
-            with Path.open(f"{realestateid}/output_1.xml", "r") as file2:
+        with Path.open(f"{realestate_dir}/output.xml", "w") as file:
+            with Path.open(f"{realestate_dir}/output_1.xml", "r") as file2:
                 content = file2.read()
             file.write(content)
 
@@ -295,13 +309,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     arg_msg = "Real estate ids as a list. For example: 111-2-34-56 999-888-7777-6666."
     parser.add_argument("-i", dest="ids", help=arg_msg, type=str, nargs="*", default=[])
+    parser.add_argument("-d", dest="dir", help="target directory for data", type=str)
     parser.add_argument("-n", dest="name", help="name of forest owner", type=str, default="test")
     args = parser.parse_args(args=None if sys.argv[1:] else ["--help"])
     ids = args.ids
+    target_dir = args.dir
     name = args.name
 
-    if not Path(f"{name}").is_dir():
-        Path(f"{name}").mkdir()
+    if not Path(f"{target_dir}").is_dir():
+        Path(f"{target_dir}").mkdir()
+
+    if not Path(f"{target_dir}/{name}").is_dir():
+        Path(f"{target_dir}/{name}").mkdir()
 
     map_data = {}
     features = []
@@ -309,28 +328,29 @@ if __name__ == "__main__":
         holding = i + 1
         realestateid = ids[i]
         realestateid_mml = parse_real_estate_id(ids[i])
+        realestate_dir = f"{target_dir}/{name}/{realestateid}"
 
-        if not Path(f"{realestateid}").is_dir():
-            Path(f"{realestateid}").mkdir()
+        if not Path(realestate_dir).is_dir():
+            Path(realestate_dir).mkdir()
 
         coordinates, estate_data = get_real_estate_polygon(realestateid_mml, api_key)
 
-        errors, coordinates = write_real_estate_xml(coordinates, realestateid)
+        errors, coordinates = write_real_estate_xml(coordinates, realestateid, realestate_dir)
         if len(errors) > 0:
             for error in errors:
                 print(error)
 
-        _ = get_ids_to_remove(coordinates, realestateid, plot=True)
+        _ = get_ids_to_remove(coordinates, realestate_dir, plot=True)
 
-        combine_xmls(realestateid, coordinates)
+        combine_xmls(realestate_dir, coordinates)
 
-        """# convert the updated xml into a multiobjective optimization problem
-        run_metsi(realestateid)
-        convert_sim_output_to_csv(realestateid)
-        write_trees_json(realestateid)
-        write_carbon_json(realestateid)
+        # convert the updated xml into a multiobjective optimization problem
+        run_metsi(realestate_dir)
+        convert_sim_output_to_csv(realestate_dir)
+        write_trees_json(realestate_dir)
+        write_carbon_json(realestate_dir)
 
-        tree = ET.parse(f"{realestateid}/output.xml")
+        tree = ET.parse(f"{realestate_dir}/output.xml")
         root = tree.getroot()
 
         for child in root:
@@ -360,5 +380,5 @@ if __name__ == "__main__":
                         feature["geometry"] = geometry
                         features.append(feature)
     map_data["features"] = features
-    with Path.open(f"{name}/{name}.json", "w") as file:
-        json.dump(map_data, file)"""
+    with Path.open(f"{target_dir}/{name}/{name}.json", "w") as file:
+        json.dump(map_data, file)
