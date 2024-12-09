@@ -1,17 +1,53 @@
+"""A python script to get forest data and metsi simulation data by just giving real estate codes of forest holdings.
 
-from pathlib import Path
+The scipt takes three arguments:
+
+-i: A list of real estate ids. For example: 111-2-34-56 999-888-7777-6666.
+
+-d: The directory (path) where the data will be stored. If the directory does not exist, the directory will be made.
+
+-n: A name for the forest holdings. This is used as a name for a directory to store the data for all the given
+    real estates. (for now) Assumed to be one string (no spaces). Can be, for example, the lastname of the forest owner.
+
+An example call:
+
+    python data_pipeline.py -i 111-2-34-56 999-888-7777-6666 -d path/to/target/directory -n Lastname
+
+With this call the script would contact Maanmittauslaitos' API and get the polygons related to the given
+real estate codes. The script will then make an HTTP request to Metsäkeskus' API to get the forest
+data related to the polygons.
+
+The polygons will then be filtered to get rid of any neighboring forest stands that get passed by the
+Metsäkeskus API. This is done by creating a buffer around the polygon from Maanmittauslaitos
+and then looping through all the stands from Metsäkeskus to see if their polygon is completely inside
+the buffered polygon of the estate. The stands that are not completely inside will be removed.
+This is visualised by drawing an image of the different polygons that showcases which
+stands are inside the blue bufferzone and which are outside (drawn in black) with red color representing the
+original polygon of the (part of the) holding and green color indicating stands that are determined to
+be inside of the bufferzone.
+
+The script will create a directory named 'Lastname' into the directory 'path/to/target/directory'.
+Into this created directory the script then creates a directory for each real estate, in this case,
+two directories named '111-2-34-56' and '999-888-7777-6666'. In these holding specific directories, the
+script stores all the forest data from Metsäkeskus related to the holding and all the outputs of metsi
+for the different holdings. The script will also create a 'Lastname.json' file into the 'Lastname' directory
+that is a json file with information needed to draw the maps in DESDEO.
+
+NOTE: write_trees_json.py parses trees.txt that is in Jari's changed form. May need some changes with the actual
+metsi form.
+"""
 
 import argparse
 import json
-import requests
 import subprocess
 import sys
-import matplotlib.pyplot as plt
-import geopandas as gpd
-import shapely.geometry as geom
-
+from pathlib import Path
 from xml.etree import ElementTree as ET
 
+import geopandas as gpd
+import matplotlib.pyplot as plt
+import requests
+import shapely.geometry as geom
 
 NS = {
         "schema_location": "http://standardit.tapio.fi/schemas/forestData ForestData.xsd",
@@ -33,7 +69,22 @@ NS = {
     }
 
 
+class PipelineError(Exception):
+    """An error class for the data pipeline."""
+
+
 def parse_real_estate_id(original_id: str) -> str:
+    """Get the given real estate id in the long format.
+
+    E.g., 111-2-34-56 --> 11100200340056
+
+    Args:
+        original_id (str): The original id with hyphens.
+
+    Returns:
+        str: The id in the long format.
+    """
+    # TODO: this could be expanded to be able to handle ids in different formats
     realestateid = original_id
     if "-" in realestateid:
         parts = realestateid.split("-")
@@ -51,95 +102,131 @@ def parse_real_estate_id(original_id: str) -> str:
     return realestateid
 
 
-def coord_to_polygon(coords: list[float]) -> str:
+def coordinates_to_polygon(coordinate_pairs: list) -> str:
+    """Get the polygon in the correct format to call Metsäkeskus API.
+
+    E.g., [(612.33, 7221.22), (611.53, 7222.11)] --> 'Polygon ((612.33 7221.22, 611.53 7222.11))'
+
+    Args:
+        coordinate_pairs (list): A list of coordinate pairs as tuples or lists.
+
+    Returns:
+        str: the coordinate pairs formed into the correct string form to call Metsäkeskus API.
+    """
     polygon = "POLYGON (("
-    for pair in coords:
+    for pair in coordinate_pairs:
         polygon = polygon + str(pair[0]) + " " + str(pair[1]) + ", "
-
-    return polygon[:-2] + "))"
-
-
-def xml_to_dict(element: ET.Element):
-    # Create a dictionary to store the result
-    result = {}
-
-    # If the element has attributes, add them to the result
-    if element.attrib:
-        result.update(('@' + k, v) for k, v in element.attrib.items())
-
-    # If the element has children, recursively process them
-    if element:
-        # Group children by tag name
-        for child in element:
-            child_dict = xml_to_dict(child)
-            # If multiple children with the same tag, put them in a list
-            if child.tag in result:
-                if isinstance(result[child.tag], list):
-                    result[child.tag].append(child_dict)
-                else:
-                    result[child.tag] = [result[child.tag], child_dict]
-            else:
-                result[child.tag] = child_dict
-    # If the element has text, add it to the result (strip extra whitespace)
-    elif element.text:
-        result = element.text.strip()
-    return result
+    return polygon[:-2] + "))" # replace the last ", " with "))"
 
 
-def get_real_estate_polygon(realestateid: str, api_key: str):
+def get_real_estate_coordinates(realestateid: str, api_key: str) -> list:
+    """Get the real estate polygon that matches the given real estate id from Maanmittauslaitos.
+
+    Args:
+        realestateid (str): The real estate ID in the long form (e.g., 11100200340056).
+        api_key (str): An API key required to contact the API.
+
+    Returns:
+        list: A list of the coordinates from Maanmittauslaitos for the given real estate ID.
+    """
     r = requests.get(f"https://avoin-paikkatieto.maanmittauslaitos.fi/kiinteisto-avoin/simple-features/v3/collections/PalstanSijaintitiedot/items?kiinteistotunnus={realestateid}",
                  params={"api-key": api_key, "crs": "http://www.opengis.net/def/crs/EPSG/0/3067"})
 
+    # get the data into a dict
     estate_data = json.loads(r.content)
+
+    # get a list of different separate "parts" of the real estate
     features = estate_data["features"]
+
+    # get the coordinates of the different parts into a list
     coordinates = []
     for feature in features:
         coordinates.append(feature["geometry"]["coordinates"][0])
-    return coordinates, features
+    return coordinates
 
 
-def write_real_estate_xml(coordinates: list, realestateid: str, realestate_dir: str) -> tuple[list[str], list]:
+def write_real_estate_xmls(coordinates: list, realestateid: str, realestate_dir: str) -> tuple[list[str], list]:
+    """Get the forest data from Metsäkeskus with a list of coordinates and write the data into XML files.
+
+    Args:
+        coordinates (list): A list of lists of coordinates. Different parts of the real estate as different lists.
+        realestateid (str): The real estate ID. Used only for the error messages.
+        realestate_dir (str): A directory to store the forest data XMLs in.
+
+    Returns:
+        tuple[list[str], list]: A list of possible error messages and a new coordinates list.
+            If a polygon does not match any stands in Metsäkeskus' database the coordinates will be removed.
+    """
     error_messages = []
+    # a copy of the original coordinate list to modify is necessary
     coordinates_copy = coordinates.copy()
+    # the number of the current part of the estate (each part has its own XML file)
     number = 1
+    # loop through the different parts of the estate
     for i in range(len(coordinates)):
-        geometry = coordinates[i]
-        polygon = coord_to_polygon(geometry)
+        # get the polygon in the correct form to call Metsäkeskus API
+        polygon = coordinates_to_polygon(coordinates[i])
+
+        # call Metsäkeskus API to get the forest data for the polygon
         req = requests.post("https://avoin.metsakeskus.fi/rest/mvrest/FRStandData/v1/ByPolygon", data={"wktPolygon": polygon, "stdVersion": "MV1.9"})
         xml = req.content
+
+        # if no stands are found with the polygon
         if "MV-kuvioita ei löytynyt." in xml.decode():
+            # add an error message stating that for a polygon, no forest data was found
             error_messages.append(f"No forest found for a polygon from estate {realestateid}.")
+
+            # remove the polygon from the list of coordinates
             coordinates_copy.pop(i)
             continue
+
+        # write the forest data into an XML file
         with Path.open(f"{realestate_dir}/output_{number}.xml", "wb") as file:
             file.write(xml)
+
+        # raise the number for the next loop
         number = number + 1
     return error_messages, coordinates_copy
 
 
-def get_polygon_dict(root: ET.ElementTree):
+def get_polygon_dict(root: ET.ElementTree) -> dict[str, dict[str, tuple[float, float]]]:
+    """Get a dict of the stands' polygons from a given ElementTree.
+
+    Args:
+        root (ET.ElementTree): ElementTree with the polygons.
+
+    Returns:
+        dict[str, dict[str, tuple[float, float]]]: A dict with stand IDs as keys and a dict with the exterior and interior
+            polygons as values.
+    """
     orig_polygons = {}
-    # make a dict of stands' coordinates
+    # loop through the children of the root
     for child in root:
         if child.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stands":
+            # loop through the stands
             for stand in child:
                 if stand.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stand":
+                    # store the stand ID
                     stand_id = stand.attrib["id"]
                     exterior_and_interior = {}
+                    # find the exterior polygon for the stand
                     for e in stand.iter("{http://www.opengis.net/gml}exterior"):
                         for s in e.iter("{http://www.opengis.net/gml}LinearRing"):
                             for i in s:
-                                coords = i.text.split(" ")
+                                coordinates = i.text.split(" ")
                                 coordinate_pairs = []
-                                for coordinate in coords:
+                                for coordinate in coordinates:
                                     coordinate_pairs.append((float(coordinate.split(",")[0]), float(coordinate.split(",")[1])))
                     exterior_and_interior["exterior"] = coordinate_pairs
                     coordinate_pairs = []
+                    # if exists, find the interior polygon (a hole in the stand)
+                    # TODO: what if there are multiple interiors?
+                    # does iter loop through all of them?
                     for e in stand.iter("{http://www.opengis.net/gml}interior"):
                         for s in e.iter("{http://www.opengis.net/gml}LinearRing"):
                             for i in s:
-                                coords = i.text.split(" ")
-                                for coordinate in coords:
+                                coordinates = i.text.split(" ")
+                                for coordinate in coordinates:
                                     coordinate_pairs.append((float(coordinate.split(",")[0]), float(coordinate.split(",")[1])))
                     exterior_and_interior["interior"] = coordinate_pairs
                     orig_polygons[stand_id] = exterior_and_interior
@@ -256,28 +343,33 @@ def run_metsi(realestate_dir: str): # make it a directory?
     # Requires that the following are found in the current repository:
     #   1. data directory from metsi (that has information about prices etc.)
     #   2. a control.yaml file that has the parameters for the metsi simulation
-
-    # TODO: change to original xml, no need for copies if everything works like it should
     res = subprocess.run(f"metsi {realestate_dir}/output.xml {realestate_dir}", capture_output=True)
-    print(res.stderr.decode())
+    if res.stderr:
+        raise PipelineError(msg="Error when running metsi: " + res.stderr.decode())
 
 
 def convert_sim_output_to_csv(realestate_dir: str): # make it a directory?
     # run the R script to convert the simulation output to csv for optimization purposes
+    # TODO: hardcode the correct location of the R file or add that as an argument to this python script
     res = subprocess.run(f"Rscript ./convert2opt.R {realestate_dir}", capture_output=True)
-    print(res)
+    if res.stderr:
+        raise PipelineError(msg="Error converting simulation data to usable CSV: " + res.stderr.decode())
 
 
 def write_trees_json(realestate_dir: str):
     # run a python script to convert trees.txt into a more usable format
+    # TODO: hardcode the correct location of the write_trees_json.py file or add that as an argument to this python script
     res = subprocess.run(f"python desdeo/utopia_stuff/write_trees_json.py -d {realestate_dir}", capture_output=True)
-    print(res)
+    if res.stderr:
+        raise PipelineError(msg="Error when writing trees.json: " + res.stderr.decode())
 
 
 def write_carbon_json(realestate_dir: str):
     # compute CO2 and write them into a json file to be used to form an optimization problem
+    # TODO: hardcode the correct location of the write_carbon_json.py file or add that as an argument to this python script
     res = subprocess.run(f"python desdeo/utopia_stuff/write_carbon_json.py -d {realestate_dir}", capture_output=True)
-    print(res)
+    if res.stderr:
+        raise PipelineError(msg="Error when writing carbon.json: " + res.stderr.decode())
 
 
 def combine_xmls(realestate_dir: str, coordinates: list):
@@ -333,9 +425,9 @@ if __name__ == "__main__":
         if not Path(realestate_dir).is_dir():
             Path(realestate_dir).mkdir()
 
-        coordinates, estate_data = get_real_estate_polygon(realestateid_mml, api_key)
+        coordinates = get_real_estate_coordinates(realestateid_mml, api_key)
 
-        errors, coordinates = write_real_estate_xml(coordinates, realestateid, realestate_dir)
+        errors, coordinates = write_real_estate_xmls(coordinates, realestateid, realestate_dir)
         if len(errors) > 0:
             for error in errors:
                 print(error)
