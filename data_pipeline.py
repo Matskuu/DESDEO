@@ -503,7 +503,6 @@ if __name__ == "__main__":
     alternatives_key = ""
     carbons = {}
     for i in range(len(ids)):
-        holding = i + 1
         realestateid = ids[i]
         realestateid_mml = parse_real_estate_id(ids[i])
         realestate_dir = f"{target_dir}/{name}/{realestateid}"
@@ -554,10 +553,23 @@ if __name__ == "__main__":
             raise PipelineError(msg="Error when writing carbon.json: " + res.stderr.decode())
 
         with Path.open(f"{realestate_dir}/alternatives.csv", "r") as f:
-            alternatives = alternatives + f.read()
+            if i == 0:
+                alternatives = alternatives + f.read()
+            else:
+                alternatives = alternatives + "\n".join(f.read().split("\n")[1:])
 
         with Path.open(f"{realestate_dir}/alternatives_key.csv", "r") as f:
-            alternatives_key = alternatives_key + f.read()
+            if i == 0:
+                alternatives_key = alternatives_key + f.read()
+            else:
+                alternatives_key = alternatives_key + "\n".join(f.read().split("\n")[1:])
+
+        carbon_dict = {}
+        with Path.open(f"{realestate_dir}/carbon.json", "r") as f:
+            carbon_dict = json.load(f)
+
+        for stand_id, value in carbon_dict.items():
+            carbons[stand_id] = value
 
         tree = ET.parse(f"{realestate_dir}/output.xml")
         root = tree.getroot()
@@ -607,6 +619,10 @@ if __name__ == "__main__":
 
     with Path.open(f"{target_dir}/{name}/filter.csv", "w") as file:
         file.write(alternatives_key)
+
+    print("Combining carbon files...")
+    with Path.open(f"{target_dir}/{name}/carbon.json", "w") as file:
+        json.dump(carbons, file)
 
     print("Writing GeoJSON file...")
     with Path.open(f"{target_dir}/{name}/{name}.geojson", "w") as file:
