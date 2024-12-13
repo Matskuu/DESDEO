@@ -19,7 +19,7 @@ it can be made an argument for this script as well)
 3. a control.yaml file, that has the parameters for the metsi simulation, has to be found in the same
     directory where the script is run?
 
-The scipt takes three arguments:
+The scipt takes four arguments:
 
 -i: A list of real estate ids. For example: 111-2-34-56 999-888-7777-6666.
 
@@ -28,9 +28,12 @@ The scipt takes three arguments:
 -n: A name for the forest holdings. This is used as a name for a directory to store the data for all the given
     real estates. (for now) Assumed to be one string (no spaces). Can be, for example, the lastname of the forest owner.
 
+-k: Path to a (text) file with the API key for Maanmittauslaitos API. The file format does not matter as long as the
+    file's content is just the API key and can be read in python.
+
 An example call:
 
-    python data_pipeline.py -i 111-2-34-56 999-888-7777-6666 -d path/to/target/directory -n Lastname
+    python data_pipeline.py -i 111-2-34-56 999-888-7777-6666 -d path/to/target/directory -n Lastname -k path/to/api/key/key.txt
 
 With this call the script would contact Maanmittauslaitos' API and get the polygons related to the given
 real estate codes. The script will then make an HTTP request to Metsäkeskus' API to get the forest
@@ -175,7 +178,9 @@ def write_real_estate_xmls(coordinates: list, realestateid: str, realestate_dir:
 
     Returns:
         tuple[list[str], list]: A list of possible error messages and a new coordinates list.
-            If a polygon does not match any stands in Metsäkeskus' database the coordinates will be removed.
+            If a polygon does not match any stands in Metsäkeskus' database the coordinates will be removed
+            and an error message is added to indicate that there were some polygons that had no data in
+            Metsäkeskus database for the real estate.
     """
     error_messages = []
     # a copy of the original coordinate list to modify is necessary
@@ -194,11 +199,14 @@ def write_real_estate_xmls(coordinates: list, realestateid: str, realestate_dir:
         # if no stands are found with the polygon
         if "MV-kuvioita ei löytynyt." in xml.decode():
             # add an error message stating that for a polygon, no forest data was found
-            error_messages.append(f"No forest found for a polygon from estate {realestateid}.")
+            error_messages.append(f"NOTE: No forest found for a polygon from estate {realestateid}.")
 
             # remove the polygon from the list of coordinates
             coordinates_copy.pop(i)
             continue
+
+        if "504 Gateway Time-out" in xml.decode():
+            raise PipelineError("Error connecting to Metsäkeskus API: 504 Gateway Time-out")
 
         # write the forest data into an XML file
         with Path.open(f"{realestate_dir}/output_{number}.xml", "wb") as file:
@@ -230,23 +238,21 @@ def get_polygon_dict(root: ET.Element) -> dict[str, dict[str, tuple[float, float
                     stand_id = stand.attrib["id"]
                     exterior_and_interior = {}
                     # find the exterior polygon for the stand
-                    for e in stand.iter("{http://www.opengis.net/gml}exterior"):
-                        for s in e.iter("{http://www.opengis.net/gml}LinearRing"):
-                            for i in s:
-                                coordinates = i.text.split(" ")
+                    for exterior in stand.iter("{http://www.opengis.net/gml}exterior"):
+                        for linear_ring in exterior.iter("{http://www.opengis.net/gml}LinearRing"):
+                            for ring in linear_ring:
+                                coordinates = ring.text.split(" ")
                                 coordinate_pairs = []
                                 for coordinate in coordinates:
                                     coordinate_pairs.append((float(coordinate.split(",")[0]), float(coordinate.split(",")[1])))
                     exterior_and_interior["exterior"] = coordinate_pairs
                     coordinate_pairs = []
                     # if exists, find the interior polygon (a hole in the stand)
-                    # TODO: what if there are multiple interiors?
-                    # does iter loop through all of them?
                     interiors = []
-                    for e in stand.iter("{http://www.opengis.net/gml}interior"):
-                        for s in e.iter("{http://www.opengis.net/gml}LinearRing"):
-                            for i in s:
-                                coordinates = i.text.split(" ")
+                    for interior in stand.iter("{http://www.opengis.net/gml}interior"):
+                        for linear_ring in interior.iter("{http://www.opengis.net/gml}LinearRing"):
+                            for ring in linear_ring:
+                                coordinates = ring.text.split(" ")
                                 for coordinate in coordinates:
                                     coordinate_pairs.append((float(coordinate.split(",")[0]), float(coordinate.split(",")[1])))
                         interiors.append(coordinate_pairs)
@@ -468,57 +474,89 @@ def combine_xmls(realestate_dir: str, coordinates: list):
 
 
 if __name__ == "__main__":
-    path_to_api_key = "C:/MyTemp/code/UTOPIA/DESDEO/key.txt" # TODO: make this an argument as well
-    with Path.open(f"{path_to_api_key}", "r") as f:
-        api_key = f.read()
-
-    # TODO: add an argument that takes the directory to save all the files to
+    # Initialize the arguments expected to be given
     parser = argparse.ArgumentParser()
-    arg_msg = "Real estate ids as a list. For example: 111-2-34-56 999-888-7777-6666."
+    arg_msg = "Real estate ids as a list. For example: -i 111-2-34-56 999-888-7777-6666"
     parser.add_argument("-i", dest="ids", help=arg_msg, type=str, nargs="*", default=[])
-    parser.add_argument("-d", dest="dir", help="target directory for data", type=str)
-    parser.add_argument("-n", dest="name", help="name of forest owner", type=str, default="test")
+    parser.add_argument("-d", dest="dir", help="Target directory for data.", type=str)
+    parser.add_argument("-n", dest="name", help="Name of forest owner.", type=str, default="test")
+    arg_msg = "Path to a (text) file with the API key for Maanmittauslaitos API."
+    parser.add_argument("-k", dest="key", help=arg_msg, type=str)
+
+    # if arguments missing, print out the help messages to inform what is needed
     args = parser.parse_args(args=None if sys.argv[1:] else ["--help"])
+
+    # gather the argument values
     ids = args.ids
     target_dir = args.dir
     name = args.name
+    api_key_dir = args.key
 
+    # get the Maanmittauslaitos api key from the given file
+    with Path.open(f"{api_key_dir}", "r") as f:
+        api_key = f.read()
+
+    # if the target directory does not exist, make the directory
     if not Path(f"{target_dir}").is_dir():
         Path(f"{target_dir}").mkdir()
 
+    # if a directory with the given name does not exist in the target directory, make the directory
     if not Path(f"{target_dir}/{name}").is_dir():
         Path(f"{target_dir}/{name}").mkdir()
 
+    # initialize a dict with the map data from all the holdings to form the GeoJSON file
     map_data = {}
+
+    # the type and name, may not be needed
     map_data["type"] = "FeatureCollection"
     map_data["name"] = "Data pipeline"
+
+    # form a dict for the coordinate system
     crs = {}
     crs["type"] = "name"
     crs["properties"] = {
         "name": "urn:ogc:def:crs:EPSG::3067"
     }
     map_data["crs"] = crs
+
+    # initialize a list of features (i.e., stands)
     features = []
+
+    # initialize strings for combining the alternatives CSV files of different real estates automatically
     alternatives = ""
     alternatives_key = ""
+    # initialize a dict to combine the carbon.json files of different real estates automatically
     carbons = {}
     for i in range(len(ids)):
+        # get the real estate id
         realestateid = ids[i]
+
+        # get the real estate id in the "long" form for the API call to Maanmittauslaitos API
         realestateid_mml = parse_real_estate_id(ids[i])
+
+        # the directory where all the data for this real estate will be stored
         realestate_dir = f"{target_dir}/{name}/{realestateid}"
 
+        # if a directory for the real estate does not exist, make it
         if not Path(realestate_dir).is_dir():
             Path(realestate_dir).mkdir()
 
+        # get the real estate coordinates from Maanmittauslaitos
         coordinates = get_real_estate_coordinates(realestateid_mml, api_key)
 
+        # get the forest data from Metsäkeskus and write it into XML files,
+        # returns any errors and updates coordinates list
+        # if no data for some polygon from Metsäkeskus, the coordinates are removed from the list
         errors, coordinates = write_real_estate_xmls(coordinates, realestateid, realestate_dir)
+        # if there were any errors in getting data from Metsäkeskus, print out the errors
         if len(errors) > 0:
             for error in errors:
                 print(error)
 
+        # remove stands from the XMLs that no not belong to the real estate and write the XMLs without them
         removed_ids = remove_neighboring_stands(coordinates, realestate_dir, plot=True)
 
+        # combine the XMLs (forest data) of all the possible separate parts of the real estate into one XML file
         combine_xmls(realestate_dir, coordinates)
 
         # Run the metsi simulator with the data in the XML file
@@ -528,21 +566,21 @@ if __name__ == "__main__":
         print(f"Running metsi simulations for {realestateid}...")
         res = subprocess.run(f"metsi {realestate_dir}/output.xml {realestate_dir}", capture_output=True)
         if res.stderr:
-            raise PipelineError(msg="Error when running metsi: " + res.stderr.decode())
+            raise PipelineError("Error when running metsi: " + res.stderr.decode())
 
         # run the R script to convert the simulation output to csv for optimization purposes
         # TODO: hardcode the correct location of the R file or add that as an argument to this python script
         print(f"Converting metsi output to CSV for {realestateid}...")
         res = subprocess.run(f"Rscript ./convert2opt.R {realestate_dir}", capture_output=True)
         if res.stderr:
-            raise PipelineError(msg="Error converting simulation data to usable CSV: " + res.stderr.decode())
+            raise PipelineError("Error converting simulation data to usable CSV: " + res.stderr.decode())
 
         # run a python script to convert trees.txt into a more usable format
         # TODO: hardcode the correct location of the write_trees_json.py file or add that as an argument to this python script
         print(f"Converting trees.txt to trees.json for {realestateid}...")
         res = subprocess.run(f"python desdeo/utopia_stuff/write_trees_json.py -d {realestate_dir}", capture_output=True)
         if res.stderr:
-            raise PipelineError(msg="Error when writing trees.json: " + res.stderr.decode())
+            raise PipelineError("Error when writing trees.json: " + res.stderr.decode())
 
         # compute CO2 and write them into a json file to be used to form an optimization problem
         # NOTE: This is veeeeeery slow
@@ -550,20 +588,22 @@ if __name__ == "__main__":
         print(f"Writing carbon.json for {realestateid}...")
         res = subprocess.run(f"python desdeo/utopia_stuff/write_carbon_json.py -d {realestate_dir}", capture_output=True)
         if res.stderr:
-            raise PipelineError(msg="Error when writing carbon.json: " + res.stderr.decode())
+            raise PipelineError("Error when writing carbon.json: " + res.stderr.decode())
 
+        # read the alternatives from the CSV file and add the contents to the python variable
         with Path.open(f"{realestate_dir}/alternatives.csv", "r") as f:
-            if i == 0:
-                alternatives = alternatives + f.read()
-            else:
-                alternatives = alternatives + "\n".join(f.read().split("\n")[1:])
+            # if the first CSV file, write the first line (headers) as well, if not then only write the data rows
+            alternatives = alternatives + f.read() if i == 0 else alternatives + "\n".join(f.read().split("\n")[1:])
 
+        # read the alternatives info from the CSV file and add the contents to the python variable
         with Path.open(f"{realestate_dir}/alternatives_key.csv", "r") as f:
+            # if the first CSV file, write the first line (headers) as well, if not then only write the data rows
             if i == 0:
                 alternatives_key = alternatives_key + f.read()
             else:
                 alternatives_key = alternatives_key + "\n".join(f.read().split("\n")[1:])
 
+        # read the real estate's carbon.json into a dict and add the contents to a dict with all the owners real estates
         carbon_dict = {}
         with Path.open(f"{realestate_dir}/carbon.json", "r") as f:
             carbon_dict = json.load(f)
@@ -571,23 +611,28 @@ if __name__ == "__main__":
         for stand_id, value in carbon_dict.items():
             carbons[stand_id] = value
 
+        # read the real estate's forest data from the XML file into an ElementTree
         tree = ET.parse(f"{realestate_dir}/output.xml")
         root = tree.getroot()
 
+        # go through the ElementTree and take the data needed for the GeoJSON
         for child in root:
             if child.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stands":
+                # go through the stands
                 for stand in child:
+                    # check that the child is a Stand element (realistically should never be anything else)
                     if stand.tag == "{http://standardit.tapio.fi/schemas/forestData/Stand}Stand":
+                        # put the stand's data into a dict
                         feature = {}
                         feature["type"] = "Feature"
                         properties = {}
                         geometry = {}
                         geometry["type"] = "Polygon"
-                        stand_id = stand.attrib["id"]
-                        properties["id"] = int(stand_id)
+                        properties["id"] = int(stand.attrib["id"]) # stand id
                         properties["estate_code"] = realestateid
-                        coordinates = []
                         properties["number"] = int(stand.find("{http://standardit.tapio.fi/schemas/forestData/Stand}StandBasicData").find("{http://standardit.tapio.fi/schemas/forestData/Stand}StandNumber").text)
+                        coordinates = []
+                        # find the exterior polygon for the stand
                         for exterior in stand.iter("{http://www.opengis.net/gml}exterior"):
                             for linear_ring in exterior.iter("{http://www.opengis.net/gml}LinearRing"):
                                 for ring in linear_ring:
@@ -596,6 +641,7 @@ if __name__ == "__main__":
                                     for coordinate in coords:
                                         coordinate_pairs.append([float(coordinate.split(",")[0]), float(coordinate.split(",")[1])])
                                     coordinates.append(coordinate_pairs)
+                        # if exists, find the interior polygon (a hole in the stand)
                         for interior in stand.iter("{http://www.opengis.net/gml}interior"):
                             for linear_ring in interior.iter("{http://www.opengis.net/gml}LinearRing"):
                                 for ring in linear_ring:
@@ -608,7 +654,12 @@ if __name__ == "__main__":
                         feature["properties"] = properties
                         feature["geometry"] = geometry
                         features.append(feature)
+
+    # after iterating through all given real estates, finish the map data dict and write and combine all the data files
     map_data["features"] = features
+    print("Writing GeoJSON file...")
+    with Path.open(f"{target_dir}/{name}/{name}.geojson", "w") as file:
+        json.dump(map_data, file)
 
     print("Combining CSV files...")
     with Path.open(f"{target_dir}/{name}/alternatives.csv", "w") as file:
@@ -623,7 +674,3 @@ if __name__ == "__main__":
     print("Combining carbon files...")
     with Path.open(f"{target_dir}/{name}/carbon.json", "w") as file:
         json.dump(carbons, file)
-
-    print("Writing GeoJSON file...")
-    with Path.open(f"{target_dir}/{name}/{name}.geojson", "w") as file:
-        json.dump(map_data, file)
